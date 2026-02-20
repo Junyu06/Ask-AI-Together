@@ -27,6 +27,7 @@ let siteOrder = [];
 let paneRatios = [];
 let themeMode = "system";
 let pendingHistoryBySite = {};
+let isComposing = false;
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -146,9 +147,9 @@ function renderSiteSettings() {
           </div>
         </div>
         <div class="right-section">
-          <span class="site-drag-handle" data-site-id="${safeId}" title="拖拽排序" aria-label="拖拽排序"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h3M8 12h3M8 17h3M13 7h3M13 12h3M13 17h3"/></svg></span>
-          <a class="open-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" aria-label="打开站点" title="打开站点"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v7h-7"/><path d="M3 10V3h7"/><path d="m3 3 11 11"/></svg></a>
-          ${canDelete ? `<button type="button" class="site-delete" data-site-id="${safeId}" aria-label="删除" title="删除"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>` : ""}
+          <span class="site-action site-drag-handle" data-site-id="${safeId}" title="拖拽排序" aria-label="拖拽排序"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h3M8 12h3M8 17h3M13 7h3M13 12h3M13 17h3"/></svg></span>
+          <a class="site-action open-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" aria-label="打开站点" title="打开站点"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 13v7H4V4h7"/></svg></a>
+          ${canDelete ? `<button type="button" class="site-action site-delete" data-site-id="${safeId}" aria-label="删除" title="删除"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>` : ""}
         </div>
       </div>
     `;
@@ -451,10 +452,17 @@ function bindEvents() {
   });
 
   promptEl.addEventListener("keydown", (e) => {
+    if (e.isComposing || isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void onSend();
     }
+  });
+  promptEl.addEventListener("compositionstart", () => {
+    isComposing = true;
+  });
+  promptEl.addEventListener("compositionend", () => {
+    isComposing = false;
   });
   promptEl.addEventListener("input", autoResizePrompt);
 

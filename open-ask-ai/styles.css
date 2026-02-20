@@ -112,15 +112,18 @@ body {
 }
 
 .input-row {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 12px;
-  align-items: end;
+  align-items: center;
   padding: 10px;
+  min-height: 68px;
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  overflow: visible;
 }
 
 :root[data-theme="dark"] .input-row {
@@ -133,11 +136,33 @@ body {
   gap: 8px;
 }
 
-textarea {
+.input-row .btn {
+  height: 48px;
+  min-height: 48px;
+}
+
+.input-row .btn-icon {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+}
+
+.prompt-wrap {
+  position: relative;
+  height: 48px;
+  min-width: 0;
+  overflow: visible;
+}
+
+#prompt {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
   min-height: 48px;
   max-height: 200px;
-  resize: vertical;
+  resize: none;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
@@ -147,13 +172,14 @@ textarea {
   font-size: 15px;
   line-height: 1.45;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+  overflow-y: auto;
 }
 
-textarea::placeholder {
+#prompt::placeholder {
   color: var(--text-muted);
 }
 
-textarea:focus {
+#prompt:focus {
   border-color: var(--line-strong);
 }
 
@@ -399,22 +425,26 @@ textarea:focus {
   color: var(--text-muted);
 }
 
-.open-link {
-  width: 30px;
-  height: 30px;
+.site-action {
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
   color: var(--text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+}
+
+.open-link {
   text-decoration: none;
 }
 
-.open-link .icon {
-  width: 16px;
-  height: 16px;
+.site-action .icon {
+  width: 18px;
+  height: 18px;
 }
 
 .open-link:hover {
@@ -423,22 +453,20 @@ textarea:focus {
 
 .site-drag-handle,
 .site-delete {
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
   color: var(--text-muted);
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.site-drag-handle .icon,
-.site-delete .icon {
-  width: 16px;
-  height: 16px;
+.site-drag-handle {
+  cursor: grab;
+}
+
+.site-drag-handle:active {
+  cursor: grabbing;
+}
+
+.site-delete {
+  border: 1px solid var(--line);
 }
 
 .toggle-switch {
