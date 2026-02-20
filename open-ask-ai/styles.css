@@ -292,6 +292,8 @@ textarea {
 }
 
 .site-drag-handle {
+  display: inline-flex;
+  align-items: center;
   height: 30px;
   border: 1px solid #dbe6f5;
   border-radius: 8px;
@@ -300,6 +302,7 @@ textarea {
   padding: 0 8px;
   cursor: move;
   font-size: 12px;
+  user-select: none;
 }
 
 .site-tag {

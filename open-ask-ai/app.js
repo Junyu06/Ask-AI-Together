@@ -115,7 +115,6 @@ function renderSiteSettings() {
   orderedSites().forEach((site) => {
     const row = document.createElement("div");
     row.className = "site-card";
-    row.draggable = true;
     row.dataset.siteId = site.id;
     const canDelete = site.id.startsWith("custom-");
     const tagText = canDelete ? "自定义" : "内置";
@@ -133,7 +132,7 @@ function renderSiteSettings() {
           </div>
         </div>
         <div class="right-section">
-          <button class="site-drag-handle" data-site-id="${site.id}" title="拖拽排序">⋮⋮</button>
+          <span class="site-drag-handle" data-site-id="${site.id}" title="拖拽排序" aria-label="拖拽排序">⋮⋮</span>
           <span class="site-tag">${tagText}</span>
           <a class="open-link" href="${site.url}" target="_blank" rel="noopener noreferrer">打开</a>
           ${canDelete ? `<button class="site-delete" data-site-id="${site.id}">删除</button>` : ""}
@@ -421,10 +420,6 @@ function initSiteDragSort() {
   const cards = Array.from(siteCheckboxesEl.querySelectorAll(".site-card"));
   if (!cards.length) return;
 
-  let draggingEl = null;
-  let draggingSiteId = "";
-  let dropped = false;
-
   async function persistSiteOrderFromDom() {
     const orderedIds = Array.from(siteCheckboxesEl.querySelectorAll(".site-card"))
       .map((el) => el.dataset.siteId)
@@ -437,57 +432,44 @@ function initSiteDragSort() {
     saveSelectedSites();
   }
 
-  cards.forEach((card) => {
-    card.ondragstart = (event) => {
-      const source = event.target;
-      if (source instanceof HTMLElement && source.closest('input, a, button, .site-delete, .open-link')) {
-        event.preventDefault();
-        return;
-      }
-      dropped = false;
-      draggingEl = card;
-      draggingSiteId = card.dataset.siteId || "";
-      card.classList.add("dragging");
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", draggingSiteId);
-    };
-    card.ondragend = () => {
-      card.classList.remove("dragging");
-      if (!dropped && draggingSiteId) {
-        void persistSiteOrderFromDom();
-      }
-      draggingEl = null;
-      draggingSiteId = "";
-      dropped = false;
-    };
-  });
-
-  siteCheckboxesEl.ondragover = (event) => {
-    event.preventDefault();
-    if (!draggingEl) return;
+  function moveCardToPosition(draggingEl, clientY) {
     const candidates = Array.from(siteCheckboxesEl.querySelectorAll(".site-card")).filter((card) => card !== draggingEl);
     let next = null;
     for (const card of candidates) {
       const rect = card.getBoundingClientRect();
       const midpoint = rect.top + rect.height / 2;
-      if (event.clientY < midpoint) {
+      if (clientY < midpoint) {
         next = card;
         break;
       }
     }
     siteCheckboxesEl.insertBefore(draggingEl, next);
-  };
+  }
 
-  siteCheckboxesEl.ondrop = async (event) => {
-    event.preventDefault();
-    const draggedId = draggingSiteId || event.dataTransfer.getData("text/plain");
-    if (!draggedId) return;
-    dropped = true;
-    if (draggingEl) draggingEl.classList.remove("dragging");
-    await persistSiteOrderFromDom();
-    draggingEl = null;
-    draggingSiteId = "";
-  };
+  // Chrome 扩展页禁用原生 DnD，改用鼠标事件实现拖拽排序
+  siteCheckboxesEl.querySelectorAll(".site-drag-handle").forEach((handle) => {
+    const card = handle.closest(".site-card");
+    if (!card) return;
+
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      card.classList.add("dragging");
+
+      const onMove = (moveEvent) => {
+        moveEvent.preventDefault();
+        moveCardToPosition(card, moveEvent.clientY);
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        card.classList.remove("dragging");
+        void persistSiteOrderFromDom();
+      };
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  });
 }
 
 function initPaneResizers() {
