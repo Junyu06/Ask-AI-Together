@@ -248,16 +248,45 @@ function buildHistoryLinks(item) {
   return links ? `<div class="history-links">${links}</div>` : "";
 }
 
+function isHttpUrl(url) {
+  return typeof url === "string" && /^https?:\/\//i.test(url);
+}
+
 function urlsForSelectedSites() {
   const result = {};
   selectedSiteIds.forEach((siteId) => {
     const fallback = getSiteById(siteId)?.url || "";
     const raw = siteUrlState[siteId] || fallback;
-    if (typeof raw === "string" && /^https?:\/\//i.test(raw)) {
+    if (isHttpUrl(raw)) {
       result[siteId] = raw;
     }
   });
   return result;
+}
+
+async function applyHistoryItem(item) {
+  const urls = item && item.urls && typeof item.urls === "object" ? item.urls : {};
+  const candidateIds = Object.keys(urls).filter((siteId) => getSiteById(siteId) && isHttpUrl(urls[siteId]));
+  if (candidateIds.length) {
+    const targetSet = new Set(candidateIds);
+    selectedSiteIds = siteOrder.filter((id) => targetSet.has(id));
+    if (!selectedSiteIds.length) {
+      selectedSiteIds = [...defaultSiteIds];
+    }
+    saveSelectedSites();
+    renderPanes();
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const frames = Array.from(document.querySelectorAll("iframe"));
+    frames.forEach((frame) => {
+      const siteId = frame.dataset.siteId;
+      const url = urls[siteId];
+      if (!isHttpUrl(url)) return;
+      if (frame.src !== url) frame.src = url;
+      siteUrlState[siteId] = url;
+    });
+    await saveSiteUrlState();
+  }
 }
 
 async function renderHistory() {
@@ -276,9 +305,11 @@ async function renderHistory() {
     `;
     box.addEventListener("click", (event) => {
       if (event.target.closest("a")) return;
+      void applyHistoryItem(item);
       promptEl.value = item.prompt || "";
       promptEl.focus();
       autoResizePrompt();
+      closePanels();
     });
     historyListEl.appendChild(box);
   });
