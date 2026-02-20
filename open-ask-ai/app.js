@@ -28,6 +28,8 @@ let paneRatios = [];
 let themeMode = "system";
 let pendingHistoryBySite = {};
 let isComposing = false;
+let mentionState = null;
+let mentionSiteIds = [];
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -38,6 +40,8 @@ const rightPanelEl = document.getElementById("right-panel");
 const historyPanelEl = document.getElementById("history-panel");
 const panelTitleEl = document.getElementById("panel-title");
 const settingsSidebarEl = document.querySelector(".settings-sidebar");
+const mentionDropdownEl = document.getElementById("mention-dropdown");
+const mentionChipsEl = document.getElementById("mention-chips");
 
 const mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -253,9 +257,9 @@ function isHttpUrl(url) {
   return typeof url === "string" && /^https?:\/\//i.test(url);
 }
 
-function urlsForSelectedSites() {
+function urlsForSelectedSites(siteIds = selectedSiteIds) {
   const result = {};
-  selectedSiteIds.forEach((siteId) => {
+  siteIds.forEach((siteId) => {
     const fallback = getSiteById(siteId)?.url || "";
     const raw = siteUrlState[siteId] || fallback;
     if (isHttpUrl(raw)) {
@@ -316,17 +320,18 @@ async function renderHistory() {
   });
 }
 
-async function appendHistory(prompt) {
+async function appendHistory(prompt, siteIds = selectedSiteIds) {
   const history = await loadHistory();
+  const validSiteIds = Array.isArray(siteIds) ? siteIds.filter((id) => getSiteById(id)) : [];
   const entry = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     prompt,
     ts: Date.now(),
-    sites: selectedSiteIds
+    sites: validSiteIds
       .map(getSiteById)
       .filter(Boolean)
       .map((site) => site.name),
-    urls: urlsForSelectedSites()
+    urls: urlsForSelectedSites(validSiteIds)
   };
   history.unshift(entry);
   const keep = history.slice(0, 200);
@@ -359,16 +364,182 @@ function sendToFrames(type, message) {
   });
 }
 
+function sendToTargetFrames(type, message, targetSiteIds) {
+  const targetSet = new Set(targetSiteIds);
+  const frames = Array.from(document.querySelectorAll("iframe"));
+  frames.forEach((frame) => {
+    if (!targetSet.has(frame.dataset.siteId)) return;
+    frame.contentWindow.postMessage({ type, message, config: { siteId: frame.dataset.siteId } }, "*");
+  });
+}
+
+function normalizeMentionKey(text) {
+  return String(text || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(/^[\s.,;:!?()[\]{}"'`~]+|[\s.,;:!?()[\]{}"'`~]+$/g, "");
+}
+
+function hideMentionDropdown() {
+  mentionDropdownEl.classList.add("hidden");
+  mentionDropdownEl.innerHTML = "";
+  mentionState = null;
+}
+
+function getMentionCandidates(query) {
+  const q = normalizeMentionKey(query);
+  const selectedSet = new Set(selectedSiteIds);
+  const sites = orderedSites().filter((site) => selectedSet.has(site.id));
+  if (!q) return sites.slice(0, 9);
+  return sites
+    .filter((site) => {
+      const name = normalizeMentionKey(site.name);
+      const id = normalizeMentionKey(site.id);
+      return name.includes(q) || id.includes(q);
+    })
+    .slice(0, 9);
+}
+
+function getMentionContext() {
+  const value = promptEl.value;
+  const caret = promptEl.selectionStart ?? value.length;
+  const atPos = value.lastIndexOf("@", Math.max(0, caret - 1));
+  if (atPos < 0) return null;
+  const before = atPos > 0 ? value[atPos - 1] : "";
+  if (before && !/\s/.test(before)) return null;
+  const token = value.slice(atPos + 1, caret);
+  if (/\s/.test(token)) return null;
+  return { atPos, caret, token };
+}
+
+function applyMentionActive() {
+  if (!mentionState) return;
+  mentionDropdownEl.querySelectorAll(".mention-item").forEach((item, index) => {
+    item.classList.toggle("active", index === mentionState.activeIndex);
+  });
+}
+
+function insertMentionCandidate(index) {
+  if (!mentionState) return false;
+  const site = mentionState.candidates[index];
+  if (!site) return false;
+  const value = promptEl.value;
+  const head = value.slice(0, mentionState.atPos);
+  const tail = value.slice(mentionState.caret);
+  promptEl.value = `${head}${tail}`;
+  const nextCaret = head.length;
+  promptEl.selectionStart = nextCaret;
+  promptEl.selectionEnd = nextCaret;
+  if (mentionSiteIds.includes(site.id)) {
+    mentionSiteIds = mentionSiteIds.filter((id) => id !== site.id);
+  } else {
+    mentionSiteIds.push(site.id);
+  }
+  renderMentionChips();
+  autoResizePrompt();
+  promptEl.focus();
+  hideMentionDropdown();
+  return true;
+}
+
+function removeMentionSite(siteId) {
+  mentionSiteIds = mentionSiteIds.filter((id) => id !== siteId);
+  renderMentionChips();
+}
+
+function renderMentionChips() {
+  const valid = mentionSiteIds.filter((siteId) => getSiteById(siteId));
+  mentionSiteIds = valid;
+  mentionChipsEl.innerHTML = "";
+  if (!valid.length) {
+    mentionChipsEl.classList.add("hidden");
+    return;
+  }
+
+  valid.forEach((siteId) => {
+    const site = getSiteById(siteId);
+    if (!site) return;
+    const chip = document.createElement("span");
+    chip.className = "mention-chip";
+    chip.innerHTML = `
+      <img src="${getFavicon(site.url)}" alt="" class="site-icon" />
+      <span class="label">@${escapeHtml(site.id)}</span>
+      <button type="button" class="remove" aria-label="移除 ${escapeHtml(site.id)}" title="移除">×</button>
+    `;
+    chip.querySelector(".remove").addEventListener("click", () => {
+      removeMentionSite(siteId);
+      promptEl.focus();
+    });
+    mentionChipsEl.appendChild(chip);
+  });
+
+  mentionChipsEl.classList.remove("hidden");
+}
+
+function refreshMentionDropdown() {
+  const ctx = getMentionContext();
+  if (!ctx) {
+    hideMentionDropdown();
+    return;
+  }
+
+  const candidates = getMentionCandidates(ctx.token);
+  if (!candidates.length) {
+    hideMentionDropdown();
+    return;
+  }
+
+  mentionState = {
+    atPos: ctx.atPos,
+    caret: ctx.caret,
+    token: ctx.token,
+    candidates,
+    activeIndex: 0
+  };
+
+  mentionDropdownEl.innerHTML = "";
+  candidates.forEach((site, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "mention-item";
+    item.innerHTML = `
+      <span class="index">${index + 1}</span>
+      <img src="${getFavicon(site.url)}" alt="" class="site-icon" />
+      <span class="name">${escapeHtml(site.name)}</span>
+      <span class="id">@${escapeHtml(site.id)}</span>
+    `;
+    item.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      void insertMentionCandidate(index);
+    });
+    mentionDropdownEl.appendChild(item);
+  });
+
+  applyMentionActive();
+  mentionDropdownEl.classList.remove("hidden");
+}
+
 async function onSend() {
-  const prompt = promptEl.value.trim();
-  if (!prompt) return;
-  sendToFrames("CHAT_MESSAGE", prompt);
-  const entry = await appendHistory(prompt);
+  const message = promptEl.value.trim();
+  if (!message) return;
+
+  const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
+  if (!targetSiteIds.length) return;
+
+  if (mentionSiteIds.length) {
+    sendToTargetFrames("CHAT_MESSAGE", message, targetSiteIds);
+  } else {
+    sendToFrames("CHAT_MESSAGE", message);
+  }
+
+  const entry = await appendHistory(message, targetSiteIds);
   pendingHistoryBySite = {};
-  selectedSiteIds.forEach((siteId) => {
+  targetSiteIds.forEach((siteId) => {
     pendingHistoryBySite[siteId] = entry.id;
   });
   promptEl.value = "";
+  mentionSiteIds = [];
+  renderMentionChips();
   autoResizePrompt();
   promptEl.focus();
 }
@@ -453,9 +624,50 @@ function bindEvents() {
 
   promptEl.addEventListener("keydown", (e) => {
     if (e.isComposing || isComposing || e.keyCode === 229) return;
+
+    if (mentionState) {
+      const max = mentionState.candidates.length;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        mentionState.activeIndex = (mentionState.activeIndex + 1) % max;
+        applyMentionActive();
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        mentionState.activeIndex = (mentionState.activeIndex - 1 + max) % max;
+        applyMentionActive();
+        return;
+      }
+      if (e.key >= "1" && e.key <= "9") {
+        const n = Number(e.key) - 1;
+        if (n < max) {
+          e.preventDefault();
+          void insertMentionCandidate(n);
+          return;
+        }
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void insertMentionCandidate(mentionState.activeIndex);
+        return;
+      }
+      if (e.key === "Escape") {
+        hideMentionDropdown();
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void onSend();
+      return;
+    }
+    if (e.key === "Backspace" && !promptEl.value && mentionSiteIds.length) {
+      e.preventDefault();
+      mentionSiteIds.pop();
+      renderMentionChips();
+      return;
     }
   });
   promptEl.addEventListener("compositionstart", () => {
@@ -464,7 +676,20 @@ function bindEvents() {
   promptEl.addEventListener("compositionend", () => {
     isComposing = false;
   });
-  promptEl.addEventListener("input", autoResizePrompt);
+  promptEl.addEventListener("input", () => {
+    autoResizePrompt();
+    refreshMentionDropdown();
+  });
+  promptEl.addEventListener("click", refreshMentionDropdown);
+  promptEl.addEventListener("keyup", (e) => {
+    if (["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) return;
+    if (e.isComposing || isComposing || e.keyCode === 229) return;
+    refreshMentionDropdown();
+  });
+  document.addEventListener("click", (event) => {
+    if (event.target === promptEl || mentionDropdownEl.contains(event.target)) return;
+    hideMentionDropdown();
+  });
 
   document.getElementById("site-settings-btn").addEventListener("click", () => {
     openSettingsPanel("sites");
@@ -482,6 +707,8 @@ function bindEvents() {
     const checked = Array.from(siteCheckboxesEl.querySelectorAll("input:checked")).map((x) => x.value);
     const checkedSet = new Set(checked.length > 0 ? checked : defaultSiteIds);
     selectedSiteIds = siteOrder.filter((id) => checkedSet.has(id));
+    mentionSiteIds = mentionSiteIds.filter((id) => checkedSet.has(id));
+    renderMentionChips();
     saveSelectedSites();
     renderPanes();
   });

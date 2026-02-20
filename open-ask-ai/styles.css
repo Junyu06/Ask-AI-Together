@@ -154,6 +154,111 @@ body {
   overflow: visible;
 }
 
+.mention-chips {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mention-chip {
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.mention-chip .label {
+  font-weight: 600;
+}
+
+.mention-chip .remove {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mention-chip .remove:hover {
+  background: var(--surface-2);
+}
+
+#mention-dropdown {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  min-width: 240px;
+  max-width: min(420px, 92vw);
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+  padding: 6px;
+  z-index: 180;
+}
+
+.mention-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mention-item:hover,
+.mention-item.active {
+  background: var(--surface-2);
+}
+
+.mention-item .index {
+  width: 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.mention-item .site-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.mention-item .name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mention-item .id {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 #prompt {
   position: absolute;
   left: 0;

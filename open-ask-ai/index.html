@@ -25,8 +25,10 @@
           </button>
         </div>
         <div class="prompt-wrap">
+          <div id="mention-chips" class="mention-chips hidden" aria-label="已选择站点"></div>
           <label for="prompt" class="visually-hidden">输入问题</label>
-          <textarea id="prompt" placeholder="输入问题，回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题"></textarea>
+          <textarea id="prompt" placeholder="输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题"></textarea>
+          <div id="mention-dropdown" class="mention-dropdown hidden" aria-hidden="true"></div>
         </div>
         <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送" title="发送">
           <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v12" /><path d="m7.5 10.5 4.5-4.5 4.5 4.5" /></svg>
