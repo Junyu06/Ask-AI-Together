@@ -1,11 +1,17 @@
 :root {
-  --bg: #f4f6fb;
-  --surface: rgba(255, 255, 255, 0.86);
-  --surface-strong: #ffffff;
-  --line: #d9e0eb;
-  --text: #182230;
-  --muted: #72839a;
-  --accent: #2f7cff;
+  /* Apple-style: off-white, clean neutrals, single accent */
+  --bg: #F5F5F7;
+  --surface: #FFFFFF;
+  --surface-strong: #FFFFFF;
+  --line: #D2D2D7;
+  --text: #1D1D1F;
+  --muted: #6E6E73;
+  --accent: #0071E3;
+  --accent-hover: #0077ED;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  --transition: 0.2s ease;
 }
 
 * {
@@ -14,7 +20,9 @@
 
 body {
   margin: 0;
-  font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
@@ -32,7 +40,7 @@ body {
 .pane {
   border: 0;
   overflow: hidden;
-  background: #fff;
+  background: var(--surface);
   height: 100%;
   flex: 0 0 auto;
 }
@@ -61,8 +69,9 @@ body {
   transform: translateX(-50%);
   width: 2px;
   height: 100%;
-  background: rgba(90, 113, 143, 0.35);
+  background: var(--line);
   border-radius: 999px;
+  opacity: 0.6;
 }
 
 .bubble {
@@ -70,9 +79,9 @@ body {
   z-index: 120;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 10px 30px rgba(25, 38, 58, 0.16);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  transition: box-shadow var(--transition);
 }
 
 .bubble-input {
@@ -118,13 +127,13 @@ body {
   flex: 1;
   min-width: 90px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   display: flex;
   justify-content: flex-end;
   align-items: center;
   padding-right: 6px;
-  background: rgba(255, 255, 255, 0.35);
-  border: 1px dashed #d7dfeb;
+  background: var(--bg);
+  border: 1px dashed var(--line);
   user-select: none;
   cursor: move;
 }
@@ -134,29 +143,72 @@ textarea {
   min-height: 56px;
   max-height: 180px;
   resize: vertical;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--surface-strong);
   color: var(--text);
   outline: none;
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.45;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
+}
+
+/* Icon buttons — Apple-style: square/rounded, no layout shift on hover */
+.icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--accent);
-  color: #fff;
-  padding: 0 14px;
+  min-width: 40px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
   cursor: pointer;
   font-size: 14px;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-icon {
+  padding: 0;
+  width: 40px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .btn-ghost {
-  background: #fff;
+  background: transparent;
+  color: var(--text);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -168,10 +220,9 @@ textarea {
   max-height: calc(100vh - 120px);
   z-index: 130;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 14px 40px rgba(20, 32, 50, 0.2);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
@@ -205,12 +256,18 @@ textarea {
 }
 
 .custom-site-form input {
-  height: 38px;
+  height: 40px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0 10px;
+  border-radius: var(--radius);
+  padding: 0 12px;
   font-size: 14px;
   outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.custom-site-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
 }
 
 .floating-window-foot {
@@ -229,12 +286,13 @@ textarea {
 }
 
 .site-card {
-  border: 1px solid #e4ebf4;
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
   margin-bottom: 8px;
   padding: 10px;
   cursor: move;
+  transition: box-shadow var(--transition);
 }
 
 .site-card.dragging {
@@ -272,12 +330,12 @@ textarea {
 .site-main-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1b2534;
+  color: var(--text);
 }
 
 .site-sub-name {
   font-size: 11px;
-  color: #8594aa;
+  color: var(--muted);
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -294,15 +352,17 @@ textarea {
 .site-drag-handle {
   display: inline-flex;
   align-items: center;
-  height: 30px;
-  border: 1px solid #dbe6f5;
-  border-radius: 8px;
-  background: #fff;
-  color: #8ea0ba;
-  padding: 0 8px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
   cursor: move;
   font-size: 12px;
   user-select: none;
+  transition: background-color var(--transition), color var(--transition);
 }
 
 .site-tag {
@@ -311,34 +371,55 @@ textarea {
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  border: 1px solid #dce6f5;
-  background: #f6f9ff;
-  color: #5e6e84;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
   font-size: 11px;
 }
 
 .open-link {
-  height: 30px;
-  border: 1px solid #dbe6f5;
-  border-radius: 8px;
-  background: #fff;
-  color: #1c5fd3;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   padding: 0 10px;
   font-size: 12px;
+  transition: background-color var(--transition), color var(--transition);
 }
 
+.open-link:hover {
+  background: var(--bg);
+}
+
+/* Delete as icon button */
 .site-delete {
-  height: 30px;
-  border: 1px solid #f2d4d1;
-  border-radius: 8px;
-  background: #fff;
-  color: #b42318;
-  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.site-delete:hover {
+  background: rgba(255, 59, 48, 0.08);
+  color: #FF3B30;
+  border-color: rgba(255, 59, 48, 0.3);
+}
+
+.site-delete .icon {
+  width: 18px;
+  height: 18px;
 }
 
 .toggle-switch {
@@ -358,8 +439,8 @@ textarea {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background-color: #d7dfeb;
-  transition: 0.2s;
+  background-color: var(--line);
+  transition: background-color var(--transition);
   border-radius: 999px;
 }
 
@@ -371,13 +452,13 @@ textarea {
   left: 3px;
   top: 3px;
   background-color: #fff;
-  transition: 0.2s;
+  transition: transform var(--transition);
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .toggle-switch input:checked + .slider {
-  background-color: #2f7cff;
+  background-color: var(--accent);
 }
 
 .toggle-switch input:checked + .slider:before {
@@ -391,11 +472,12 @@ textarea {
 }
 
 .history-item {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px;
+  border-radius: var(--radius);
+  padding: 10px;
   margin-bottom: 8px;
+  transition: box-shadow var(--transition);
 }
 
 .history-item .prompt {
