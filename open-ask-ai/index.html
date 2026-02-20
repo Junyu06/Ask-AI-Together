@@ -8,76 +8,99 @@
   </head>
   <body>
     <div id="panes" class="panes"></div>
+    <div id="panel-backdrop" class="panel-backdrop hidden" aria-hidden="true"></div>
 
-    <div id="input-bubble" class="bubble bubble-input">
-      <div class="input-actions">
-        <button id="site-settings-btn" class="btn btn-icon btn-ghost" aria-label="设置" title="设置">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.213-1.28Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
-        </button>
-        <button id="new-chat" class="btn btn-icon btn-ghost" aria-label="新对话" title="新对话">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-        </button>
-        <button id="history-btn" class="btn btn-icon btn-ghost" aria-label="历史" title="历史">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-        </button>
-        <div id="input-bubble-handle" class="drag-space">
-          <span class="muted">拖动区域</span>
-        </div>
-      </div>
+    <section id="input-bubble" class="bubble bubble-input" aria-label="输入与操作">
       <div class="input-row">
-        <textarea id="prompt" placeholder="输入问题，回车发送（Shift+Enter 换行）"></textarea>
-        <button id="send" class="btn btn-icon btn-primary" aria-label="发送" title="发送">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" /></svg>
-        </button>
-      </div>
-    </div>
-
-    <div id="site-settings" class="floating-window hidden">
-      <div id="site-settings-handle" class="floating-window-head">
-        <span>设置</span>
-        <button id="site-settings-close" class="btn btn-icon btn-ghost" aria-label="关闭" title="关闭">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-        </button>
-      </div>
-      <div class="floating-window-subtitle">站点选择</div>
-      <div id="site-checkboxes" class="site-checkboxes"></div>
-      <div class="floating-window-foot">
-        <button id="save-sites" class="btn btn-icon btn-ghost" aria-label="保存" title="保存">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-        </button>
-        <button id="toggle-custom-site" class="btn btn-icon btn-primary" aria-label="新增站点" title="新增站点">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-        </button>
-      </div>
-      <div id="custom-site-form" class="custom-site-form hidden">
-        <input id="custom-site-name" type="text" placeholder="站点名称，例如 Perplexity" />
-        <input id="custom-site-url" type="url" placeholder="站点地址，例如 https://www.perplexity.ai/" />
-        <div class="custom-site-actions">
-          <button id="cancel-custom-site" class="btn btn-icon btn-ghost" aria-label="取消" title="取消">
-            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        <div class="left-actions" aria-label="工具栏">
+          <button id="site-settings-btn" class="btn btn-icon btn-ghost" type="button" aria-label="设置" title="设置">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
-          <button id="add-custom-site" class="btn btn-icon btn-primary" aria-label="确认新增" title="确认新增">
-            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+          <button id="history-btn" class="btn btn-icon btn-ghost" type="button" aria-label="历史记录" title="历史记录">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+          </button>
+          <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button" aria-label="新对话" title="新对话">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            <span>新聊天</span>
+          </button>
+        </div>
+        <label for="prompt" class="visually-hidden">输入问题</label>
+        <textarea id="prompt" placeholder="输入问题，回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题"></textarea>
+        <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送" title="发送">
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v12" /><path d="m7.5 10.5 4.5-4.5 4.5 4.5" /></svg>
+        </button>
+      </div>
+      <div class="drag-ring" aria-hidden="true"></div>
+    </section>
+
+    <aside id="right-panel" class="right-panel hidden" role="dialog" aria-modal="true" aria-labelledby="panel-title">
+      <div class="panel-head">
+        <h2 id="panel-title">设置</h2>
+        <button id="panel-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭">
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div class="panel-body">
+        <nav class="settings-sidebar" aria-label="设置类别">
+          <button class="sidebar-item active" data-settings-tab="sites" type="button">站点</button>
+          <button class="sidebar-item" data-settings-tab="appearance" type="button">外观</button>
+        </nav>
+        <section id="settings-content" class="settings-content">
+          <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">
+            <p class="floating-window-subtitle">站点选择与排序</p>
+            <ul id="site-checkboxes" class="site-checkboxes"></ul>
+            <div class="floating-window-foot">
+              <button id="save-sites" class="btn btn-ghost" type="button">保存</button>
+              <button id="toggle-custom-site" class="btn btn-primary" type="button">添加站点</button>
+            </div>
+            <div id="custom-site-form" class="custom-site-form hidden">
+              <label for="custom-site-name" class="visually-hidden">站点名称</label>
+              <input id="custom-site-name" type="text" placeholder="站点名称，例如 Perplexity" aria-label="站点名称" />
+              <label for="custom-site-url" class="visually-hidden">站点地址</label>
+              <input id="custom-site-url" type="url" placeholder="站点地址，例如 https://www.perplexity.ai/" aria-label="站点地址" />
+              <div class="custom-site-actions">
+                <button id="cancel-custom-site" class="btn btn-ghost" type="button">取消</button>
+                <button id="add-custom-site" class="btn btn-primary" type="button">添加</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="settings-tab-appearance" class="settings-tab" data-tab="appearance">
+            <p class="floating-window-subtitle">主题模式</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input type="radio" name="theme-mode" value="system" />
+                <span>跟随系统</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="theme-mode" value="light" />
+                <span>白色</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="theme-mode" value="dark" />
+                <span>黑色</span>
+              </label>
+            </div>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <aside id="history-panel" class="right-panel hidden" role="dialog" aria-modal="true" aria-labelledby="history-title">
+      <div class="panel-head">
+        <h2 id="history-title">历史</h2>
+        <div class="panel-head-actions">
+          <button id="history-clear" class="btn btn-ghost" type="button">清空</button>
+          <button id="history-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
       </div>
-    </div>
-
-    <div id="history" class="floating-window hidden">
-      <div id="history-handle" class="floating-window-head">
-        <span>历史</span>
-        <button id="history-close" class="btn btn-icon btn-ghost" aria-label="关闭" title="关闭">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-        </button>
+      <div class="history-panel-body">
+        <p class="floating-window-subtitle">点击历史中的站点链接可回到对应页面</p>
+        <ul id="history-list" class="history-list"></ul>
       </div>
-      <div class="floating-window-subtitle">本地记录</div>
-      <div id="history-list" class="history-list"></div>
-      <div class="floating-window-foot">
-        <button id="history-clear" class="btn btn-icon btn-ghost" aria-label="清空历史" title="清空历史">
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-        </button>
-      </div>
-    </div>
+    </aside>
 
     <script src="app.js"></script>
   </body>

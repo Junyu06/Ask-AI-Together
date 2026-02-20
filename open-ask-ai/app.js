@@ -2,7 +2,8 @@ const STORAGE_KEYS = {
   selectedSites: "oa_selected_sites",
   history: "oa_history",
   customSites: "oa_custom_sites",
-  siteOrder: "oa_site_order"
+  siteOrder: "oa_site_order",
+  themeMode: "oa_theme_mode"
 };
 
 const BUILTIN_SITES = [
@@ -23,11 +24,28 @@ let siteUrlState = {};
 let customSites = [];
 let siteOrder = [];
 let paneRatios = [];
+let themeMode = "system";
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
 const historyListEl = document.getElementById("history-list");
 const siteCheckboxesEl = document.getElementById("site-checkboxes");
+const panelBackdropEl = document.getElementById("panel-backdrop");
+const rightPanelEl = document.getElementById("right-panel");
+const historyPanelEl = document.getElementById("history-panel");
+const panelTitleEl = document.getElementById("panel-title");
+const settingsSidebarEl = document.querySelector(".settings-sidebar");
+
+const mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 function getSiteById(id) {
   return allSites().find((site) => site.id === id);
@@ -58,15 +76,9 @@ function getFavicon(url) {
   }
 }
 
-function gridColumns(count) {
-  if (count <= 1) return "1fr";
-  return `repeat(${count}, minmax(280px, 1fr))`;
-}
-
 function renderPanes() {
   const selectedSet = new Set(selectedSiteIds);
   const sites = orderedSites().filter((site) => selectedSet.has(site.id));
-  panesEl.style.gridTemplateColumns = "";
 
   if (!sites.length) {
     panesEl.innerHTML = "";
@@ -104,38 +116,39 @@ function createPane(site) {
   const pane = document.createElement("div");
   pane.className = "pane";
   pane.dataset.siteId = site.id;
-  pane.innerHTML = `
-    <iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>
-  `;
+  pane.innerHTML = `<iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>`;
   return pane;
 }
 
 function renderSiteSettings() {
   siteCheckboxesEl.innerHTML = "";
   orderedSites().forEach((site) => {
-    const row = document.createElement("div");
+    const row = document.createElement("li");
     row.className = "site-card";
     row.dataset.siteId = site.id;
     const canDelete = site.id.startsWith("custom-");
     const tagText = canDelete ? "自定义" : "内置";
+    const safeName = escapeHtml(site.name);
+    const safeUrl = escapeHtml(site.url);
+    const safeId = escapeHtml(site.id);
     row.innerHTML = `
       <div class="site-checkbox-content">
         <div class="left-section">
           <label class="toggle-switch">
-            <input type="checkbox" value="${site.id}" ${selectedSiteIds.includes(site.id) ? "checked" : ""} />
+            <input type="checkbox" value="${safeId}" ${selectedSiteIds.includes(site.id) ? "checked" : ""} />
             <span class="slider"></span>
           </label>
-          <img src="${getFavicon(site.url)}" alt="${site.name}" class="site-icon" />
+          <img src="${getFavicon(site.url)}" alt="${safeName}" class="site-icon" />
           <div class="site-name-block">
-            <div class="site-main-name">${site.name}</div>
-            <div class="site-sub-name">${site.url}</div>
+            <div class="site-main-name">${safeName}</div>
+            <div class="site-sub-name">${safeUrl}</div>
           </div>
         </div>
         <div class="right-section">
-          <span class="site-drag-handle" data-site-id="${site.id}" title="拖拽排序" aria-label="拖拽排序">⋮⋮</span>
+          <span class="site-drag-handle" data-site-id="${safeId}" title="拖拽排序" aria-label="拖拽排序"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h3M8 12h3M8 17h3M13 7h3M13 12h3M13 17h3"/></svg></span>
           <span class="site-tag">${tagText}</span>
-          <a class="open-link" href="${site.url}" target="_blank" rel="noopener noreferrer">打开</a>
-          ${canDelete ? `<button type="button" class="site-delete" data-site-id="${site.id}" aria-label="删除" title="删除"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg></button>` : ""}
+          <a class="open-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">打开</a>
+          ${canDelete ? `<button type="button" class="site-delete" data-site-id="${safeId}" aria-label="删除" title="删除"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>` : ""}
         </div>
       </div>
     `;
@@ -212,17 +225,51 @@ function formatTime(ts) {
   return new Date(ts).toLocaleString();
 }
 
+function buildHistoryLinks(item) {
+  const urls = item.urls && typeof item.urls === "object" ? item.urls : {};
+  const links = Object.entries(urls)
+    .filter(([, url]) => typeof url === "string" && /^https?:\/\//i.test(url))
+    .map(([siteId, url]) => {
+      const site = getSiteById(siteId);
+      const label = escapeHtml(site ? site.name : siteId);
+      return `<a class="history-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    })
+    .join("");
+  return links ? `<div class="history-links">${links}</div>` : "";
+}
+
+function urlsForSelectedSites() {
+  const result = {};
+  selectedSiteIds.forEach((siteId) => {
+    const fallback = getSiteById(siteId)?.url || "";
+    const raw = siteUrlState[siteId] || fallback;
+    if (typeof raw === "string" && /^https?:\/\//i.test(raw)) {
+      result[siteId] = raw;
+    }
+  });
+  return result;
+}
+
 async function renderHistory() {
   const history = await loadHistory();
   historyListEl.innerHTML = "";
 
   history.forEach((item) => {
-    const box = document.createElement("div");
+    const box = document.createElement("li");
     box.className = "history-item";
+    const prompt = escapeHtml(item.prompt || "");
+    const meta = `${formatTime(item.ts)} | ${escapeHtml((item.sites || []).join(", "))}`;
     box.innerHTML = `
-      <div class="prompt">${item.prompt}</div>
-      <div class="meta">${formatTime(item.ts)} | ${item.sites.join(", ")}</div>
+      <div class="prompt">${prompt}</div>
+      <div class="meta">${meta}</div>
+      ${buildHistoryLinks(item)}
     `;
+    box.addEventListener("click", (event) => {
+      if (event.target.closest("a")) return;
+      promptEl.value = item.prompt || "";
+      promptEl.focus();
+      autoResizePrompt();
+    });
     historyListEl.appendChild(box);
   });
 }
@@ -237,7 +284,7 @@ async function appendHistory(prompt) {
       .map(getSiteById)
       .filter(Boolean)
       .map((site) => site.name),
-    urls: { ...siteUrlState }
+    urls: urlsForSelectedSites()
   });
   const keep = history.slice(0, 200);
   await chrome.storage.local.set({ [STORAGE_KEYS.history]: keep });
@@ -257,7 +304,80 @@ async function onSend() {
   sendToFrames("CHAT_MESSAGE", prompt);
   await appendHistory(prompt);
   promptEl.value = "";
+  autoResizePrompt();
   promptEl.focus();
+}
+
+function autoResizePrompt() {
+  promptEl.style.height = "auto";
+  promptEl.style.height = `${Math.min(promptEl.scrollHeight, 200)}px`;
+}
+
+function openSettingsPanel(tab = "sites") {
+  historyPanelEl.classList.add("hidden");
+  rightPanelEl.classList.remove("hidden");
+  panelTitleEl.textContent = "设置";
+  switchSettingsTab(tab);
+  syncBackdropVisibility();
+}
+
+function openHistoryPanel() {
+  rightPanelEl.classList.add("hidden");
+  historyPanelEl.classList.remove("hidden");
+  syncBackdropVisibility();
+}
+
+function closePanels() {
+  rightPanelEl.classList.add("hidden");
+  historyPanelEl.classList.add("hidden");
+  syncBackdropVisibility();
+}
+
+function syncBackdropVisibility() {
+  const hasOpenPanel = !rightPanelEl.classList.contains("hidden") || !historyPanelEl.classList.contains("hidden");
+  panelBackdropEl.classList.toggle("hidden", !hasOpenPanel);
+}
+
+function switchSettingsTab(tab) {
+  settingsSidebarEl.querySelectorAll(".sidebar-item").forEach((item) => {
+    const active = item.dataset.settingsTab === tab;
+    item.classList.toggle("active", active);
+  });
+
+  document.querySelectorAll(".settings-tab").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.tab === tab);
+  });
+}
+
+async function loadThemeMode() {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.themeMode]);
+  const saved = data[STORAGE_KEYS.themeMode];
+  if (["system", "light", "dark"].includes(saved)) {
+    themeMode = saved;
+  } else {
+    themeMode = "system";
+  }
+}
+
+function getEffectiveTheme() {
+  if (themeMode === "system") {
+    return mediaDark.matches ? "dark" : "light";
+  }
+  return themeMode;
+}
+
+function applyTheme() {
+  const effective = getEffectiveTheme();
+  document.documentElement.setAttribute("data-theme", effective);
+
+  const radio = document.querySelector(`input[name="theme-mode"][value="${themeMode}"]`);
+  if (radio) radio.checked = true;
+}
+
+async function setThemeMode(mode) {
+  themeMode = mode;
+  await chrome.storage.local.set({ [STORAGE_KEYS.themeMode]: mode });
+  applyTheme();
 }
 
 function bindEvents() {
@@ -272,23 +392,26 @@ function bindEvents() {
       void onSend();
     }
   });
+  promptEl.addEventListener("input", autoResizePrompt);
 
-  const siteSettings = document.getElementById("site-settings");
-  const history = document.getElementById("history");
   document.getElementById("site-settings-btn").addEventListener("click", () => {
-    history.classList.add("hidden");
-    siteSettings.classList.toggle("hidden");
+    openSettingsPanel("sites");
   });
-  document.getElementById("site-settings-close").addEventListener("click", () => {
-    siteSettings.classList.add("hidden");
+  document.getElementById("panel-close").addEventListener("click", closePanels);
+  panelBackdropEl.addEventListener("click", closePanels);
+
+  settingsSidebarEl.querySelectorAll(".sidebar-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      switchSettingsTab(item.dataset.settingsTab);
+    });
   });
+
   document.getElementById("save-sites").addEventListener("click", () => {
     const checked = Array.from(siteCheckboxesEl.querySelectorAll("input:checked")).map((x) => x.value);
     const checkedSet = new Set(checked.length > 0 ? checked : defaultSiteIds);
     selectedSiteIds = siteOrder.filter((id) => checkedSet.has(id));
     saveSelectedSites();
     renderPanes();
-    siteSettings.classList.add("hidden");
   });
 
   const customForm = document.getElementById("custom-site-form");
@@ -315,11 +438,7 @@ function bindEvents() {
     try {
       const parsed = new URL(normalizedUrl);
       const id = `custom-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
-      customSites.push({
-        id,
-        name,
-        url: parsed.toString()
-      });
+      customSites.push({ id, name, url: parsed.toString() });
       siteOrder.push(id);
       await saveCustomSites();
       await saveSiteOrder();
@@ -328,21 +447,29 @@ function bindEvents() {
       urlInput.value = "";
       customForm.classList.add("hidden");
     } catch (_error) {
-      // Keep UI simple: invalid URL is ignored.
+      // Invalid URL ignored.
     }
   });
 
   document.getElementById("history-btn").addEventListener("click", async () => {
-    siteSettings.classList.add("hidden");
     await renderHistory();
-    history.classList.toggle("hidden");
+    openHistoryPanel();
   });
-  document.getElementById("history-close").addEventListener("click", () => {
-    history.classList.add("hidden");
-  });
+
+  document.getElementById("history-close").addEventListener("click", closePanels);
   document.getElementById("history-clear").addEventListener("click", async () => {
     await chrome.storage.local.set({ [STORAGE_KEYS.history]: [] });
     await renderHistory();
+  });
+
+  document.querySelectorAll('input[name="theme-mode"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      void setThemeMode(radio.value);
+    });
+  });
+
+  mediaDark.addEventListener("change", () => {
+    if (themeMode === "system") applyTheme();
   });
 
   window.addEventListener("message", (event) => {
@@ -353,15 +480,12 @@ function bindEvents() {
     }
   });
 
-  initDraggable("input-bubble", "input-bubble-handle", { clearCenterOnDrag: true });
-  initDraggable("site-settings", "site-settings-handle");
-  initDraggable("history", "history-handle");
+  initDraggableBubble("input-bubble");
 }
 
-function initDraggable(targetId, handleId, options = {}) {
+function initDraggableBubble(targetId) {
   const target = document.getElementById(targetId);
-  const handle = document.getElementById(handleId);
-  if (!target || !handle) return;
+  if (!target) return;
 
   let dragging = false;
   let startX = 0;
@@ -369,15 +493,22 @@ function initDraggable(targetId, handleId, options = {}) {
   let baseLeft = 0;
   let baseTop = 0;
 
-  handle.addEventListener("mousedown", (e) => {
-    dragging = true;
+  target.addEventListener("mousedown", (e) => {
+    const blocked = e.target.closest("textarea, button, input, a, label");
+    if (blocked) return;
+
     const rect = target.getBoundingClientRect();
+    const nearLeft = Math.abs(e.clientX - rect.left) <= 34;
+    const nearRight = Math.abs(e.clientX - rect.right) <= 34;
+    const nearTop = Math.abs(e.clientY - rect.top) <= 34;
+    const nearBottom = Math.abs(e.clientY - rect.bottom) <= 34;
+    if (!(nearLeft || nearRight || nearTop || nearBottom)) return;
+
+    dragging = true;
     target.style.left = `${rect.left}px`;
     target.style.top = `${rect.top}px`;
     target.style.bottom = "auto";
-    if (options.clearCenterOnDrag) {
-      target.style.transform = "none";
-    }
+    target.style.transform = "none";
     startX = e.clientX;
     startY = e.clientY;
     baseLeft = rect.left;
@@ -407,12 +538,15 @@ async function init() {
   await loadCustomSites();
   await loadSiteOrder();
   await loadSelectedSites();
+  await loadThemeMode();
   normalizeOrderAndSelection();
   await saveSiteOrder();
   saveSelectedSites();
   renderPanes();
   renderSiteSettings();
   await renderHistory();
+  applyTheme();
+  autoResizePrompt();
   bindEvents();
 }
 
@@ -446,7 +580,6 @@ function initSiteDragSort() {
     siteCheckboxesEl.insertBefore(draggingEl, next);
   }
 
-  // Chrome 扩展页禁用原生 DnD，改用鼠标事件实现拖拽排序
   siteCheckboxesEl.querySelectorAll(".site-drag-handle").forEach((handle) => {
     const card = handle.closest(".site-card");
     if (!card) return;
