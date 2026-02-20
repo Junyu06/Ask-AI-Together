@@ -467,6 +467,12 @@ body {
 
 .site-delete {
   border: 1px solid var(--line);
+  color: #c62828;
+  border-color: rgba(198, 40, 40, 0.45);
+}
+
+.site-delete:hover {
+  background: rgba(198, 40, 40, 0.1);
 }
 
 .toggle-switch {
