@@ -9,41 +9,51 @@
   <body>
     <div id="panes" class="panes"></div>
 
-    <div id="floating-dock" class="floating-dock">
-      <div id="dock-handle" class="dock-handle">
-        <span>Open Ask AI Together</span>
-        <span class="muted">拖动</span>
-      </div>
-      <div class="dock-toolbar">
-        <button id="site-settings-btn" class="btn btn-ghost">站点</button>
+    <div id="input-bubble" class="bubble bubble-input">
+      <div class="input-actions">
+        <button id="site-settings-btn" class="btn btn-ghost">设置</button>
+        <button id="new-chat" class="btn btn-ghost">新 chat</button>
         <button id="history-btn" class="btn btn-ghost">历史</button>
-        <button id="new-chat" class="btn btn-ghost">新对话</button>
+        <div id="input-bubble-handle" class="drag-space">
+          <span class="muted">拖动区域</span>
+        </div>
       </div>
-      <div class="dock-input-row">
+      <div class="input-row">
         <textarea id="prompt" placeholder="输入问题，回车发送（Shift+Enter 换行）"></textarea>
         <button id="send" class="btn">发送</button>
       </div>
+    </div>
 
-      <div id="site-settings" class="dock-panel hidden">
-        <div class="dock-panel-head">
-          <span>选择站点</span>
-          <button id="site-settings-close" class="btn btn-ghost">关闭</button>
-        </div>
-        <div id="site-checkboxes" class="site-checkboxes"></div>
-        <div class="dock-panel-foot">
-          <button id="save-sites" class="btn">保存</button>
+    <div id="site-settings" class="floating-window hidden">
+      <div id="site-settings-handle" class="floating-window-head">
+        <span>设置</span>
+        <button id="site-settings-close" class="btn btn-ghost">关闭</button>
+      </div>
+      <div class="floating-window-subtitle">站点选择</div>
+      <div id="site-checkboxes" class="site-checkboxes"></div>
+      <div class="floating-window-foot">
+        <button id="save-sites" class="btn btn-ghost">保存</button>
+        <button id="toggle-custom-site" class="btn">新增站点</button>
+      </div>
+      <div id="custom-site-form" class="custom-site-form hidden">
+        <input id="custom-site-name" type="text" placeholder="站点名称，例如 Perplexity" />
+        <input id="custom-site-url" type="url" placeholder="站点地址，例如 https://www.perplexity.ai/" />
+        <div class="custom-site-actions">
+          <button id="cancel-custom-site" class="btn btn-ghost">取消</button>
+          <button id="add-custom-site" class="btn">确认新增</button>
         </div>
       </div>
+    </div>
 
-      <div id="history" class="dock-panel hidden">
-        <div class="dock-panel-head">
-          <span>历史记录（本地）</span>
-          <button id="history-close" class="btn btn-ghost">关闭</button>
-        </div>
-        <div id="history-list" class="history-list"></div>
-        <div class="dock-panel-foot">
-          <button id="history-clear" class="btn btn-ghost">清空历史</button>
-        </div>
+    <div id="history" class="floating-window hidden">
+      <div id="history-handle" class="floating-window-head">
+        <span>历史</span>
+        <button id="history-close" class="btn btn-ghost">关闭</button>
+      </div>
+      <div class="floating-window-subtitle">本地记录</div>
+      <div id="history-list" class="history-list"></div>
+      <div class="floating-window-foot">
+        <button id="history-clear" class="btn btn-ghost">清空历史</button>
       </div>
     </div>
 

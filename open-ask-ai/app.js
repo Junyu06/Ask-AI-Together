@@ -1,9 +1,11 @@
 const STORAGE_KEYS = {
   selectedSites: "oa_selected_sites",
-  history: "oa_history"
+  history: "oa_history",
+  customSites: "oa_custom_sites",
+  siteOrder: "oa_site_order"
 };
 
-const SITES = [
+const BUILTIN_SITES = [
   { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com/" },
   { id: "deepseek", name: "DeepSeek", url: "https://chat.deepseek.com/" },
   { id: "kimi", name: "Kimi", url: "https://www.kimi.com/" },
@@ -18,6 +20,9 @@ const defaultSiteIds = ["chatgpt", "deepseek", "kimi"];
 
 let selectedSiteIds = [];
 let siteUrlState = {};
+let customSites = [];
+let siteOrder = [];
+let paneRatios = [];
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -25,7 +30,32 @@ const historyListEl = document.getElementById("history-list");
 const siteCheckboxesEl = document.getElementById("site-checkboxes");
 
 function getSiteById(id) {
-  return SITES.find((site) => site.id === id);
+  return allSites().find((site) => site.id === id);
+}
+
+function allSites() {
+  return [...BUILTIN_SITES, ...customSites];
+}
+
+function orderedSites() {
+  const map = new Map(allSites().map((site) => [site.id, site]));
+  const ordered = [];
+  siteOrder.forEach((id) => {
+    const site = map.get(id);
+    if (site) ordered.push(site);
+    map.delete(id);
+  });
+  map.forEach((site) => ordered.push(site));
+  return ordered;
+}
+
+function getFavicon(url) {
+  try {
+    const host = new URL(url).hostname;
+    return `https://www.google.com/s2/favicons?domain=${host}&sz=64`;
+  } catch (_error) {
+    return "";
+  }
 }
 
 function gridColumns(count) {
@@ -34,31 +64,100 @@ function gridColumns(count) {
 }
 
 function renderPanes() {
-  const sites = selectedSiteIds.map(getSiteById).filter(Boolean);
-  panesEl.innerHTML = "";
-  panesEl.style.gridTemplateColumns = gridColumns(sites.length);
+  const selectedSet = new Set(selectedSiteIds);
+  const sites = orderedSites().filter((site) => selectedSet.has(site.id));
+  panesEl.style.gridTemplateColumns = "";
 
-  sites.forEach((site) => {
-    const pane = document.createElement("div");
-    pane.className = "pane";
-    pane.innerHTML = `
-      <iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>
-    `;
-    panesEl.appendChild(pane);
+  if (!sites.length) {
+    panesEl.innerHTML = "";
+    return;
+  }
+
+  if (paneRatios.length !== sites.length) {
+    paneRatios = Array.from({ length: sites.length }, () => 1 / sites.length);
+  }
+
+  const existingPaneMap = new Map(
+    Array.from(panesEl.querySelectorAll(".pane")).map((pane) => [pane.dataset.siteId, pane])
+  );
+  const frag = document.createDocumentFragment();
+
+  sites.forEach((site, index) => {
+    const pane = existingPaneMap.get(site.id) || createPane(site);
+    pane.dataset.index = String(index);
+    pane.style.width = `${paneRatios[index] * 100}%`;
+    frag.appendChild(pane);
+
+    if (index < sites.length - 1) {
+      const resizer = document.createElement("div");
+      resizer.className = "pane-resizer";
+      resizer.dataset.index = String(index);
+      frag.appendChild(resizer);
+    }
   });
+
+  panesEl.replaceChildren(frag);
+  initPaneResizers();
+}
+
+function createPane(site) {
+  const pane = document.createElement("div");
+  pane.className = "pane";
+  pane.dataset.siteId = site.id;
+  pane.innerHTML = `
+    <iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>
+  `;
+  return pane;
 }
 
 function renderSiteSettings() {
   siteCheckboxesEl.innerHTML = "";
-  SITES.forEach((site) => {
-    const row = document.createElement("label");
-    row.className = "site-item";
+  orderedSites().forEach((site) => {
+    const row = document.createElement("div");
+    row.className = "site-card";
+    row.draggable = true;
+    row.dataset.siteId = site.id;
+    const canDelete = site.id.startsWith("custom-");
+    const tagText = canDelete ? "自定义" : "内置";
     row.innerHTML = `
-      <input type="checkbox" value="${site.id}" ${selectedSiteIds.includes(site.id) ? "checked" : ""} />
-      <span>${site.name}</span>
+      <div class="site-checkbox-content">
+        <div class="left-section">
+          <label class="toggle-switch">
+            <input type="checkbox" value="${site.id}" ${selectedSiteIds.includes(site.id) ? "checked" : ""} />
+            <span class="slider"></span>
+          </label>
+          <img src="${getFavicon(site.url)}" alt="${site.name}" class="site-icon" />
+          <div class="site-name-block">
+            <div class="site-main-name">${site.name}</div>
+            <div class="site-sub-name">${site.url}</div>
+          </div>
+        </div>
+        <div class="right-section">
+          <button class="site-drag-handle" data-site-id="${site.id}" title="拖拽排序">⋮⋮</button>
+          <span class="site-tag">${tagText}</span>
+          <a class="open-link" href="${site.url}" target="_blank" rel="noopener noreferrer">打开</a>
+          ${canDelete ? `<button class="site-delete" data-site-id="${site.id}">删除</button>` : ""}
+        </div>
+      </div>
     `;
     siteCheckboxesEl.appendChild(row);
   });
+
+  siteCheckboxesEl.querySelectorAll(".site-delete").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const siteId = e.currentTarget.getAttribute("data-site-id");
+      customSites = customSites.filter((site) => site.id !== siteId);
+      selectedSiteIds = selectedSiteIds.filter((id) => id !== siteId);
+      siteOrder = siteOrder.filter((id) => id !== siteId);
+      await saveCustomSites();
+      await saveSiteOrder();
+      saveSelectedSites();
+      renderSiteSettings();
+      renderPanes();
+    });
+  });
+
+  initSiteDragSort();
 }
 
 function saveSelectedSites() {
@@ -73,6 +172,36 @@ async function loadSelectedSites() {
   } else {
     selectedSiteIds = [...defaultSiteIds];
   }
+}
+
+async function loadCustomSites() {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.customSites]);
+  customSites = Array.isArray(data[STORAGE_KEYS.customSites]) ? data[STORAGE_KEYS.customSites] : [];
+}
+
+async function saveCustomSites() {
+  await chrome.storage.local.set({ [STORAGE_KEYS.customSites]: customSites });
+}
+
+async function loadSiteOrder() {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.siteOrder]);
+  siteOrder = Array.isArray(data[STORAGE_KEYS.siteOrder]) ? data[STORAGE_KEYS.siteOrder] : [];
+}
+
+async function saveSiteOrder() {
+  await chrome.storage.local.set({ [STORAGE_KEYS.siteOrder]: siteOrder });
+}
+
+function normalizeOrderAndSelection() {
+  const ids = allSites().map((site) => site.id);
+  const idSet = new Set(ids);
+
+  siteOrder = siteOrder.filter((id) => idSet.has(id));
+  ids.forEach((id) => {
+    if (!siteOrder.includes(id)) siteOrder.push(id);
+  });
+
+  selectedSiteIds = selectedSiteIds.filter((id) => idSet.has(id));
 }
 
 async function loadHistory() {
@@ -156,10 +285,52 @@ function bindEvents() {
   });
   document.getElementById("save-sites").addEventListener("click", () => {
     const checked = Array.from(siteCheckboxesEl.querySelectorAll("input:checked")).map((x) => x.value);
-    selectedSiteIds = checked.length > 0 ? checked : [...defaultSiteIds];
+    const checkedSet = new Set(checked.length > 0 ? checked : defaultSiteIds);
+    selectedSiteIds = siteOrder.filter((id) => checkedSet.has(id));
     saveSelectedSites();
     renderPanes();
     siteSettings.classList.add("hidden");
+  });
+
+  const customForm = document.getElementById("custom-site-form");
+  document.getElementById("toggle-custom-site").addEventListener("click", () => {
+    customForm.classList.toggle("hidden");
+  });
+  document.getElementById("cancel-custom-site").addEventListener("click", () => {
+    customForm.classList.add("hidden");
+  });
+
+  document.getElementById("add-custom-site").addEventListener("click", async () => {
+    const nameInput = document.getElementById("custom-site-name");
+    const urlInput = document.getElementById("custom-site-url");
+    const name = nameInput.value.trim();
+    const url = urlInput.value.trim();
+
+    if (!name || !url) return;
+
+    let normalizedUrl = url;
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      normalizedUrl = `https://${normalizedUrl}`;
+    }
+
+    try {
+      const parsed = new URL(normalizedUrl);
+      const id = `custom-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
+      customSites.push({
+        id,
+        name,
+        url: parsed.toString()
+      });
+      siteOrder.push(id);
+      await saveCustomSites();
+      await saveSiteOrder();
+      renderSiteSettings();
+      nameInput.value = "";
+      urlInput.value = "";
+      customForm.classList.add("hidden");
+    } catch (_error) {
+      // Keep UI simple: invalid URL is ignored.
+    }
   });
 
   document.getElementById("history-btn").addEventListener("click", async () => {
@@ -183,13 +354,15 @@ function bindEvents() {
     }
   });
 
-  initDockDrag();
+  initDraggable("input-bubble", "input-bubble-handle", { clearCenterOnDrag: true });
+  initDraggable("site-settings", "site-settings-handle");
+  initDraggable("history", "history-handle");
 }
 
-function initDockDrag() {
-  const dock = document.getElementById("floating-dock");
-  const handle = document.getElementById("dock-handle");
-  if (!dock || !handle) return;
+function initDraggable(targetId, handleId, options = {}) {
+  const target = document.getElementById(targetId);
+  const handle = document.getElementById(handleId);
+  if (!target || !handle) return;
 
   let dragging = false;
   let startX = 0;
@@ -199,11 +372,13 @@ function initDockDrag() {
 
   handle.addEventListener("mousedown", (e) => {
     dragging = true;
-    const rect = dock.getBoundingClientRect();
-    dock.style.left = `${rect.left}px`;
-    dock.style.top = `${rect.top}px`;
-    dock.style.bottom = "auto";
-    dock.style.transform = "none";
+    const rect = target.getBoundingClientRect();
+    target.style.left = `${rect.left}px`;
+    target.style.top = `${rect.top}px`;
+    target.style.bottom = "auto";
+    if (options.clearCenterOnDrag) {
+      target.style.transform = "none";
+    }
     startX = e.clientX;
     startY = e.clientY;
     baseLeft = rect.left;
@@ -215,12 +390,12 @@ function initDockDrag() {
     if (!dragging) return;
     const nextLeft = baseLeft + (e.clientX - startX);
     const nextTop = baseTop + (e.clientY - startY);
-    const maxLeft = window.innerWidth - dock.offsetWidth;
-    const maxTop = window.innerHeight - dock.offsetHeight;
+    const maxLeft = window.innerWidth - target.offsetWidth;
+    const maxTop = window.innerHeight - target.offsetHeight;
     const clampedLeft = Math.max(0, Math.min(maxLeft, nextLeft));
     const clampedTop = Math.max(0, Math.min(maxTop, nextTop));
-    dock.style.left = `${clampedLeft}px`;
-    dock.style.top = `${clampedTop}px`;
+    target.style.left = `${clampedLeft}px`;
+    target.style.top = `${clampedTop}px`;
   });
 
   window.addEventListener("mouseup", () => {
@@ -230,11 +405,145 @@ function initDockDrag() {
 }
 
 async function init() {
+  await loadCustomSites();
+  await loadSiteOrder();
   await loadSelectedSites();
+  normalizeOrderAndSelection();
+  await saveSiteOrder();
+  saveSelectedSites();
   renderPanes();
   renderSiteSettings();
   await renderHistory();
   bindEvents();
+}
+
+function initSiteDragSort() {
+  const cards = Array.from(siteCheckboxesEl.querySelectorAll(".site-card"));
+  if (!cards.length) return;
+
+  let draggingEl = null;
+  let draggingSiteId = "";
+  let dropped = false;
+
+  async function persistSiteOrderFromDom() {
+    const orderedIds = Array.from(siteCheckboxesEl.querySelectorAll(".site-card"))
+      .map((el) => el.dataset.siteId)
+      .filter(Boolean);
+    if (!orderedIds.length) return;
+    siteOrder = orderedIds;
+    await saveSiteOrder();
+    const selectedSet = new Set(selectedSiteIds);
+    selectedSiteIds = siteOrder.filter((id) => selectedSet.has(id));
+    saveSelectedSites();
+  }
+
+  cards.forEach((card) => {
+    card.ondragstart = (event) => {
+      const source = event.target;
+      if (source instanceof HTMLElement && source.closest('input, a, button, .site-delete, .open-link')) {
+        event.preventDefault();
+        return;
+      }
+      dropped = false;
+      draggingEl = card;
+      draggingSiteId = card.dataset.siteId || "";
+      card.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", draggingSiteId);
+    };
+    card.ondragend = () => {
+      card.classList.remove("dragging");
+      if (!dropped && draggingSiteId) {
+        void persistSiteOrderFromDom();
+      }
+      draggingEl = null;
+      draggingSiteId = "";
+      dropped = false;
+    };
+  });
+
+  siteCheckboxesEl.ondragover = (event) => {
+    event.preventDefault();
+    if (!draggingEl) return;
+    const candidates = Array.from(siteCheckboxesEl.querySelectorAll(".site-card")).filter((card) => card !== draggingEl);
+    let next = null;
+    for (const card of candidates) {
+      const rect = card.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      if (event.clientY < midpoint) {
+        next = card;
+        break;
+      }
+    }
+    siteCheckboxesEl.insertBefore(draggingEl, next);
+  };
+
+  siteCheckboxesEl.ondrop = async (event) => {
+    event.preventDefault();
+    const draggedId = draggingSiteId || event.dataTransfer.getData("text/plain");
+    if (!draggedId) return;
+    dropped = true;
+    if (draggingEl) draggingEl.classList.remove("dragging");
+    await persistSiteOrderFromDom();
+    draggingEl = null;
+    draggingSiteId = "";
+  };
+}
+
+function initPaneResizers() {
+  const resizers = Array.from(panesEl.querySelectorAll(".pane-resizer"));
+  const panes = Array.from(panesEl.querySelectorAll(".pane"));
+  if (!resizers.length || panes.length < 2) return;
+
+  resizers.forEach((resizer) => {
+    resizer.onmousedown = (event) => {
+      event.preventDefault();
+      const leftIndex = Number(resizer.dataset.index);
+      const leftPane = panes[leftIndex];
+      const rightPane = panes[leftIndex + 1];
+      if (!leftPane || !rightPane) return;
+
+      const containerRect = panesEl.getBoundingClientRect();
+      const leftStart = leftPane.getBoundingClientRect().width;
+      const rightStart = rightPane.getBoundingClientRect().width;
+      const startX = event.clientX;
+      const minWidth = 220;
+
+      const onMove = (moveEvent) => {
+        const delta = moveEvent.clientX - startX;
+        let nextLeft = leftStart + delta;
+        let nextRight = rightStart - delta;
+        if (nextLeft < minWidth) {
+          nextLeft = minWidth;
+          nextRight = leftStart + rightStart - nextLeft;
+        }
+        if (nextRight < minWidth) {
+          nextRight = minWidth;
+          nextLeft = leftStart + rightStart - nextRight;
+        }
+        leftPane.style.width = `${nextLeft}px`;
+        rightPane.style.width = `${nextRight}px`;
+      };
+
+      const onUp = () => {
+        const widths = panes.map((pane) => pane.getBoundingClientRect().width);
+        const total = widths.reduce((sum, width) => sum + width, 0) || containerRect.width;
+        paneRatios = widths.map((width) => width / total);
+        panes.forEach((pane, idx) => {
+          pane.style.width = `${paneRatios[idx] * 100}%`;
+        });
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.body.style.cursor = "ew-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+  });
 }
 
 void init();

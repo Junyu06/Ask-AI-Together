@@ -64,6 +64,13 @@ function currentSite() {
   return SITES.find((site) => site.matchHosts.some((h) => host.includes(h))) || null;
 }
 
+const GENERIC_SITE = {
+  id: "generic",
+  inputSelectors: ["textarea", 'div[contenteditable="true"]', "input[type='text']"],
+  sendSelectors: ['button[type="submit"]', "button.send", "button[aria-label*='Send']"],
+  newChatSelectors: []
+};
+
 function findFirst(selectors) {
   for (const selector of selectors) {
     const el = document.querySelector(selector);
@@ -115,8 +122,7 @@ function clickSend(site, inputEl) {
 }
 
 function sendPrompt(prompt) {
-  const site = currentSite();
-  if (!site) return;
+  const site = currentSite() || GENERIC_SITE;
   const inputEl = findFirst(site.inputSelectors);
   if (!setInputValue(inputEl, prompt)) return;
   setTimeout(() => clickSend(site, inputEl), 80);
@@ -144,8 +150,7 @@ let lastHref = location.href;
 setInterval(() => {
   if (location.href === lastHref) return;
   lastHref = location.href;
-  const site = currentSite();
-  if (!site) return;
+  const site = currentSite() || GENERIC_SITE;
   window.parent.postMessage(
     {
       type: "UPDATE_HISTORY",

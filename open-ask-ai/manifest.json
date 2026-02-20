@@ -8,15 +8,7 @@
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "*://chatgpt.com/*",
-    "*://chat.openai.com/*",
-    "*://chat.deepseek.com/*",
-    "*://www.kimi.com/*",
-    "*://chat.qwen.ai/*",
-    "*://www.doubao.com/*",
-    "*://yuanbao.tencent.com/*",
-    "*://grok.com/*",
-    "*://gemini.google.com/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
@@ -27,15 +19,7 @@
   "content_scripts": [
     {
       "matches": [
-        "*://chatgpt.com/*",
-        "*://chat.openai.com/*",
-        "*://chat.deepseek.com/*",
-        "*://www.kimi.com/*",
-        "*://chat.qwen.ai/*",
-        "*://www.doubao.com/*",
-        "*://yuanbao.tencent.com/*",
-        "*://grok.com/*",
-        "*://gemini.google.com/*"
+        "<all_urls>"
       ],
       "js": [
         "content.js"
