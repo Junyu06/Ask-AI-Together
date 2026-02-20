@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Open Ask AI Together</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="panes" class="panes"></div>
+
+    <div id="floating-dock" class="floating-dock">
+      <div id="dock-handle" class="dock-handle">
+        <span>Open Ask AI Together</span>
+        <span class="muted">拖动</span>
+      </div>
+      <div class="dock-toolbar">
+        <button id="site-settings-btn" class="btn btn-ghost">站点</button>
+        <button id="history-btn" class="btn btn-ghost">历史</button>
+        <button id="new-chat" class="btn btn-ghost">新对话</button>
+      </div>
+      <div class="dock-input-row">
+        <textarea id="prompt" placeholder="输入问题，回车发送（Shift+Enter 换行）"></textarea>
+        <button id="send" class="btn">发送</button>
+      </div>
+
+      <div id="site-settings" class="dock-panel hidden">
+        <div class="dock-panel-head">
+          <span>选择站点</span>
+          <button id="site-settings-close" class="btn btn-ghost">关闭</button>
+        </div>
+        <div id="site-checkboxes" class="site-checkboxes"></div>
+        <div class="dock-panel-foot">
+          <button id="save-sites" class="btn">保存</button>
+        </div>
+      </div>
+
+      <div id="history" class="dock-panel hidden">
+        <div class="dock-panel-head">
+          <span>历史记录（本地）</span>
+          <button id="history-close" class="btn btn-ghost">关闭</button>
+        </div>
+        <div id="history-list" class="history-list"></div>
+        <div class="dock-panel-foot">
+          <button id="history-clear" class="btn btn-ghost">清空历史</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "Open Ask AI Together",
+  "description": "Open-source multi-AI split screen with prompt broadcast and local history.",
+  "version": "0.1.0",
+  "permissions": [
+    "storage",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "*://chatgpt.com/*",
+    "*://chat.openai.com/*",
+    "*://chat.deepseek.com/*",
+    "*://www.kimi.com/*",
+    "*://chat.qwen.ai/*",
+    "*://www.doubao.com/*",
+    "*://yuanbao.tencent.com/*",
+    "*://grok.com/*",
+    "*://gemini.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Ask AI Together"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://chatgpt.com/*",
+        "*://chat.openai.com/*",
+        "*://chat.deepseek.com/*",
+        "*://www.kimi.com/*",
+        "*://chat.qwen.ai/*",
+        "*://www.doubao.com/*",
+        "*://yuanbao.tencent.com/*",
+        "*://grok.com/*",
+        "*://gemini.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle",
+      "match_about_blank": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "index.html",
+        "styles.css",
+        "app.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
