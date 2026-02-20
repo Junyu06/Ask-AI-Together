@@ -147,9 +147,7 @@ window.addEventListener("message", (event) => {
 });
 
 let lastHref = location.href;
-setInterval(() => {
-  if (location.href === lastHref) return;
-  lastHref = location.href;
+function postUrlUpdate() {
   const site = currentSite() || GENERIC_SITE;
   window.parent.postMessage(
     {
@@ -161,4 +159,11 @@ setInterval(() => {
     },
     "*"
   );
+}
+
+postUrlUpdate();
+setInterval(() => {
+  if (location.href === lastHref) return;
+  lastHref = location.href;
+  postUrlUpdate();
 }, 600);

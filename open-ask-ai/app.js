@@ -3,7 +3,8 @@ const STORAGE_KEYS = {
   history: "oa_history",
   customSites: "oa_custom_sites",
   siteOrder: "oa_site_order",
-  themeMode: "oa_theme_mode"
+  themeMode: "oa_theme_mode",
+  siteUrlState: "oa_site_url_state"
 };
 
 const BUILTIN_SITES = [
@@ -25,6 +26,7 @@ let customSites = [];
 let siteOrder = [];
 let paneRatios = [];
 let themeMode = "system";
+let pendingHistoryBySite = {};
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -127,7 +129,6 @@ function renderSiteSettings() {
     row.className = "site-card";
     row.dataset.siteId = site.id;
     const canDelete = site.id.startsWith("custom-");
-    const tagText = canDelete ? "自定义" : "内置";
     const safeName = escapeHtml(site.name);
     const safeUrl = escapeHtml(site.url);
     const safeId = escapeHtml(site.id);
@@ -146,8 +147,7 @@ function renderSiteSettings() {
         </div>
         <div class="right-section">
           <span class="site-drag-handle" data-site-id="${safeId}" title="拖拽排序" aria-label="拖拽排序"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h3M8 12h3M8 17h3M13 7h3M13 12h3M13 17h3"/></svg></span>
-          <span class="site-tag">${tagText}</span>
-          <a class="open-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">打开</a>
+          <a class="open-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" aria-label="打开站点" title="打开站点"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v7h-7"/><path d="M3 10V3h7"/><path d="m3 3 11 11"/></svg></a>
           ${canDelete ? `<button type="button" class="site-delete" data-site-id="${safeId}" aria-label="删除" title="删除"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>` : ""}
         </div>
       </div>
@@ -221,6 +221,16 @@ async function loadHistory() {
   return Array.isArray(data[STORAGE_KEYS.history]) ? data[STORAGE_KEYS.history] : [];
 }
 
+async function loadSiteUrlState() {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.siteUrlState]);
+  const raw = data[STORAGE_KEYS.siteUrlState];
+  siteUrlState = raw && typeof raw === "object" ? raw : {};
+}
+
+async function saveSiteUrlState() {
+  await chrome.storage.local.set({ [STORAGE_KEYS.siteUrlState]: siteUrlState });
+}
+
 function formatTime(ts) {
   return new Date(ts).toLocaleString();
 }
@@ -276,7 +286,7 @@ async function renderHistory() {
 
 async function appendHistory(prompt) {
   const history = await loadHistory();
-  history.unshift({
+  const entry = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     prompt,
     ts: Date.now(),
@@ -285,10 +295,29 @@ async function appendHistory(prompt) {
       .filter(Boolean)
       .map((site) => site.name),
     urls: urlsForSelectedSites()
-  });
+  };
+  history.unshift(entry);
   const keep = history.slice(0, 200);
   await chrome.storage.local.set({ [STORAGE_KEYS.history]: keep });
   await renderHistory();
+  return entry;
+}
+
+async function patchHistoryUrl(entryId, siteId, url) {
+  if (!entryId || !siteId || !/^https?:\/\//i.test(url)) return;
+  const history = await loadHistory();
+  const idx = history.findIndex((item) => item && item.id === entryId);
+  if (idx < 0) return;
+  const item = history[idx];
+  const urls = item.urls && typeof item.urls === "object" ? { ...item.urls } : {};
+  if (urls[siteId] === url) return;
+  urls[siteId] = url;
+  item.urls = urls;
+  history[idx] = item;
+  await chrome.storage.local.set({ [STORAGE_KEYS.history]: history.slice(0, 200) });
+  if (!historyPanelEl.classList.contains("hidden")) {
+    await renderHistory();
+  }
 }
 
 function sendToFrames(type, message) {
@@ -302,7 +331,11 @@ async function onSend() {
   const prompt = promptEl.value.trim();
   if (!prompt) return;
   sendToFrames("CHAT_MESSAGE", prompt);
-  await appendHistory(prompt);
+  const entry = await appendHistory(prompt);
+  pendingHistoryBySite = {};
+  selectedSiteIds.forEach((siteId) => {
+    pendingHistoryBySite[siteId] = entry.id;
+  });
   promptEl.value = "";
   autoResizePrompt();
   promptEl.focus();
@@ -477,6 +510,12 @@ function bindEvents() {
     const payload = event.data.payload || {};
     if (payload.siteId && payload.url) {
       siteUrlState[payload.siteId] = payload.url;
+      void saveSiteUrlState();
+      const pendingEntryId = pendingHistoryBySite[payload.siteId];
+      if (pendingEntryId) {
+        delete pendingHistoryBySite[payload.siteId];
+        void patchHistoryUrl(pendingEntryId, payload.siteId, payload.url);
+      }
     }
   });
 
@@ -538,6 +577,7 @@ async function init() {
   await loadCustomSites();
   await loadSiteOrder();
   await loadSelectedSites();
+  await loadSiteUrlState();
   await loadThemeMode();
   normalizeOrderAndSelection();
   await saveSiteOrder();
