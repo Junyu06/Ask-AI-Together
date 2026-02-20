@@ -4,7 +4,8 @@ const STORAGE_KEYS = {
   customSites: "oa_custom_sites",
   siteOrder: "oa_site_order",
   themeMode: "oa_theme_mode",
-  siteUrlState: "oa_site_url_state"
+  siteUrlState: "oa_site_url_state",
+  localeMode: "oa_locale_mode"
 };
 
 const BUILTIN_SITES = [
@@ -30,6 +31,7 @@ let pendingHistoryBySite = {};
 let isComposing = false;
 let mentionState = null;
 let mentionSiteIds = [];
+let localeMode = "auto";
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -44,6 +46,140 @@ const mentionDropdownEl = document.getElementById("mention-dropdown");
 const mentionChipsEl = document.getElementById("mention-chips");
 
 const mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
+const I18N = {
+  zh: {
+    input_bubble_aria: "输入与操作",
+    toolbar_aria: "工具栏",
+    settings_title: "设置",
+    history_title: "历史",
+    new_chat: "新聊天",
+    selected_sites: "已选择站点",
+    prompt_label: "输入问题",
+    prompt_placeholder: "输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）",
+    send: "发送",
+    close: "关闭",
+    settings_categories: "设置类别",
+    sites_tab: "站点",
+    appearance_tab: "外观",
+    sites_subtitle: "站点选择与排序",
+    save: "保存",
+    add_site: "添加站点",
+    site_name: "站点名称",
+    site_url: "站点地址",
+    site_name_placeholder: "站点名称，例如 Perplexity",
+    site_url_placeholder: "站点地址，例如 https://www.perplexity.ai/",
+    cancel: "取消",
+    add: "添加",
+    theme_mode: "主题模式",
+    language_mode: "语言",
+    language_auto: "跟随浏览器",
+    language_zh: "中文",
+    language_en: "English",
+    theme_system: "跟随系统",
+    theme_light: "白色",
+    theme_dark: "黑色",
+    clear: "清空",
+    history_subtitle: "点击历史中的站点链接可回到对应页面",
+    delete: "删除",
+    drag_sort: "拖拽排序",
+    open_site: "打开站点",
+    remove: "移除"
+  },
+  en: {
+    input_bubble_aria: "Input and actions",
+    toolbar_aria: "Toolbar",
+    settings_title: "Settings",
+    history_title: "History",
+    new_chat: "New Chat",
+    selected_sites: "Selected Sites",
+    prompt_label: "Prompt",
+    prompt_placeholder: "Message... @ targets AI. Enter sends.",
+    send: "Send",
+    close: "Close",
+    settings_categories: "Settings categories",
+    sites_tab: "Sites",
+    appearance_tab: "Appearance",
+    sites_subtitle: "Site selection and sorting",
+    save: "Save",
+    add_site: "Add Site",
+    site_name: "Site Name",
+    site_url: "Site URL",
+    site_name_placeholder: "Site name, e.g. Perplexity",
+    site_url_placeholder: "Site URL, e.g. https://www.perplexity.ai/",
+    cancel: "Cancel",
+    add: "Add",
+    theme_mode: "Theme Mode",
+    language_mode: "Language",
+    language_auto: "Follow Browser",
+    language_zh: "Chinese",
+    language_en: "English",
+    theme_system: "System",
+    theme_light: "Light",
+    theme_dark: "Dark",
+    clear: "Clear",
+    history_subtitle: "Click site links in history to return to the corresponding page",
+    delete: "Delete",
+    drag_sort: "Drag to sort",
+    open_site: "Open site",
+    remove: "Remove"
+  }
+};
+let locale = "en";
+
+function t(key) {
+  return I18N[locale]?.[key] || I18N.en[key] || key;
+}
+
+function detectLocale() {
+  if (localeMode === "zh" || localeMode === "en") return localeMode;
+  const lang = String(navigator.language || "").toLowerCase();
+  return lang.startsWith("zh") ? "zh" : "en";
+}
+
+function applyI18n() {
+  locale = detectLocale();
+  document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n");
+    if (!key) return;
+    el.textContent = t(key);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-placeholder");
+    if (!key) return;
+    el.setAttribute("placeholder", t(key));
+  });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-aria-label");
+    if (!key) return;
+    el.setAttribute("aria-label", t(key));
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-title");
+    if (!key) return;
+    el.setAttribute("title", t(key));
+  });
+
+  const localeRadio = document.querySelector(`input[name="locale-mode"][value="${localeMode}"]`);
+  if (localeRadio) localeRadio.checked = true;
+}
+
+async function loadLocaleMode() {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.localeMode]);
+  const saved = data[STORAGE_KEYS.localeMode];
+  localeMode = ["auto", "zh", "en"].includes(saved) ? saved : "auto";
+}
+
+async function setLocaleMode(mode) {
+  localeMode = mode;
+  await chrome.storage.local.set({ [STORAGE_KEYS.localeMode]: mode });
+  applyI18n();
+  renderSiteSettings();
+  renderMentionChips();
+  await renderHistory();
+  panelTitleEl.textContent = !rightPanelEl.classList.contains("hidden") ? t("settings_title") : t("history_title");
+}
 
 function escapeHtml(str) {
   return String(str)
@@ -151,9 +287,9 @@ function renderSiteSettings() {
           </div>
         </div>
         <div class="right-section">
-          ${canDelete ? `<button type="button" class="site-action site-delete" data-site-id="${safeId}" aria-label="删除" title="删除"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>` : ""}
-          <span class="site-action site-drag-handle" data-site-id="${safeId}" title="拖拽排序" aria-label="拖拽排序"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h3M8 12h3M8 17h3M13 7h3M13 12h3M13 17h3"/></svg></span>
-          <a class="site-action open-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" aria-label="打开站点" title="打开站点"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 13v7H4V4h7"/></svg></a>
+          ${canDelete ? `<button type="button" class="site-action site-delete" data-site-id="${safeId}" aria-label="${escapeHtml(t("delete"))}" title="${escapeHtml(t("delete"))}"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>` : ""}
+          <span class="site-action site-drag-handle" data-site-id="${safeId}" title="${escapeHtml(t("drag_sort"))}" aria-label="${escapeHtml(t("drag_sort"))}"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h3M8 12h3M8 17h3M13 7h3M13 12h3M13 17h3"/></svg></span>
+          <a class="site-action open-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(t("open_site"))}" title="${escapeHtml(t("open_site"))}"><svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 13v7H4V4h7"/></svg></a>
         </div>
       </div>
     `;
@@ -464,7 +600,7 @@ function renderMentionChips() {
     chip.innerHTML = `
       <img src="${getFavicon(site.url)}" alt="" class="site-icon" />
       <span class="label">@${escapeHtml(site.id)}</span>
-      <button type="button" class="remove" aria-label="移除 ${escapeHtml(site.id)}" title="移除">×</button>
+      <button type="button" class="remove" aria-label="${escapeHtml(t("remove"))} ${escapeHtml(site.id)}" title="${escapeHtml(t("remove"))}">×</button>
     `;
     chip.querySelector(".remove").addEventListener("click", () => {
       removeMentionSite(siteId);
@@ -552,7 +688,7 @@ function autoResizePrompt() {
 function openSettingsPanel(tab = "sites") {
   historyPanelEl.classList.add("hidden");
   rightPanelEl.classList.remove("hidden");
-  panelTitleEl.textContent = "设置";
+  panelTitleEl.textContent = t("settings_title");
   switchSettingsTab(tab);
   syncBackdropVisibility();
 }
@@ -560,6 +696,7 @@ function openSettingsPanel(tab = "sites") {
 function openHistoryPanel() {
   rightPanelEl.classList.add("hidden");
   historyPanelEl.classList.remove("hidden");
+  panelTitleEl.textContent = t("history_title");
   syncBackdropVisibility();
 }
 
@@ -647,7 +784,7 @@ function bindEvents() {
           return;
         }
       }
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         void insertMentionCandidate(mentionState.activeIndex);
         return;
@@ -767,6 +904,12 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll('input[name="locale-mode"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      void setLocaleMode(radio.value);
+    });
+  });
+
   mediaDark.addEventListener("change", () => {
     if (themeMode === "system") applyTheme();
   });
@@ -845,6 +988,8 @@ async function init() {
   await loadSelectedSites();
   await loadSiteUrlState();
   await loadThemeMode();
+  await loadLocaleMode();
+  applyI18n();
   normalizeOrderAndSelection();
   await saveSiteOrder();
   saveSelectedSites();

@@ -10,27 +10,27 @@
     <div id="panes" class="panes"></div>
     <div id="panel-backdrop" class="panel-backdrop hidden" aria-hidden="true"></div>
 
-    <section id="input-bubble" class="bubble bubble-input" aria-label="输入与操作">
+    <section id="input-bubble" class="bubble bubble-input" aria-label="输入与操作" data-i18n-aria-label="input_bubble_aria">
       <div class="input-row">
-        <div class="left-actions" aria-label="工具栏">
-          <button id="site-settings-btn" class="btn btn-icon btn-ghost" type="button" aria-label="设置" title="设置">
+        <div class="left-actions" aria-label="工具栏" data-i18n-aria-label="toolbar_aria">
+          <button id="site-settings-btn" class="btn btn-icon btn-ghost" type="button" aria-label="设置" title="设置" data-i18n-aria-label="settings_title" data-i18n-title="settings_title">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
-          <button id="history-btn" class="btn btn-icon btn-ghost" type="button" aria-label="历史记录" title="历史记录">
+          <button id="history-btn" class="btn btn-icon btn-ghost" type="button" aria-label="历史记录" title="历史记录" data-i18n-aria-label="history_title" data-i18n-title="history_title">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
           </button>
-          <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button" aria-label="新对话" title="新对话">
+          <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button" aria-label="新对话" title="新对话" data-i18n-aria-label="new_chat" data-i18n-title="new_chat">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-            <span>新聊天</span>
+            <span data-i18n="new_chat">新聊天</span>
           </button>
         </div>
         <div class="prompt-wrap">
-          <div id="mention-chips" class="mention-chips hidden" aria-label="已选择站点"></div>
-          <label for="prompt" class="visually-hidden">输入问题</label>
-          <textarea id="prompt" placeholder="输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题"></textarea>
+          <div id="mention-chips" class="mention-chips hidden" aria-label="已选择站点" data-i18n-aria-label="selected_sites"></div>
+          <label for="prompt" class="visually-hidden" data-i18n="prompt_label">输入问题</label>
+          <textarea id="prompt" placeholder="输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题" data-i18n-placeholder="prompt_placeholder" data-i18n-aria-label="prompt_label"></textarea>
           <div id="mention-dropdown" class="mention-dropdown hidden" aria-hidden="true"></div>
         </div>
-        <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送" title="发送">
+        <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送" title="发送" data-i18n-aria-label="send" data-i18n-title="send">
           <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v12" /><path d="m7.5 10.5 4.5-4.5 4.5 4.5" /></svg>
         </button>
       </div>
@@ -39,50 +39,65 @@
 
     <aside id="right-panel" class="right-panel hidden" role="dialog" aria-modal="true" aria-labelledby="panel-title">
       <div class="panel-head">
-        <h2 id="panel-title">设置</h2>
-        <button id="panel-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭">
+        <h2 id="panel-title" data-i18n="settings_title">设置</h2>
+        <button id="panel-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="close" data-i18n-title="close">
           <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
       </div>
       <div class="panel-body">
-        <nav class="settings-sidebar" aria-label="设置类别">
-          <button class="sidebar-item active" data-settings-tab="sites" type="button">站点</button>
-          <button class="sidebar-item" data-settings-tab="appearance" type="button">外观</button>
+        <nav class="settings-sidebar" aria-label="设置类别" data-i18n-aria-label="settings_categories">
+          <button class="sidebar-item active" data-settings-tab="sites" type="button" data-i18n="sites_tab">站点</button>
+          <button class="sidebar-item" data-settings-tab="appearance" type="button" data-i18n="appearance_tab">外观</button>
         </nav>
         <section id="settings-content" class="settings-content">
           <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">
-            <p class="floating-window-subtitle">站点选择与排序</p>
+            <p class="floating-window-subtitle" data-i18n="sites_subtitle">站点选择与排序</p>
             <ul id="site-checkboxes" class="site-checkboxes"></ul>
             <div class="floating-window-foot">
-              <button id="save-sites" class="btn btn-ghost" type="button">保存</button>
-              <button id="toggle-custom-site" class="btn btn-primary" type="button">添加站点</button>
+              <button id="save-sites" class="btn btn-ghost" type="button" data-i18n="save">保存</button>
+              <button id="toggle-custom-site" class="btn btn-primary" type="button" data-i18n="add_site">添加站点</button>
             </div>
             <div id="custom-site-form" class="custom-site-form hidden">
-              <label for="custom-site-name" class="visually-hidden">站点名称</label>
-              <input id="custom-site-name" type="text" placeholder="站点名称，例如 Perplexity" aria-label="站点名称" />
-              <label for="custom-site-url" class="visually-hidden">站点地址</label>
-              <input id="custom-site-url" type="url" placeholder="站点地址，例如 https://www.perplexity.ai/" aria-label="站点地址" />
+              <label for="custom-site-name" class="visually-hidden" data-i18n="site_name">站点名称</label>
+              <input id="custom-site-name" type="text" placeholder="站点名称，例如 Perplexity" aria-label="站点名称" data-i18n-placeholder="site_name_placeholder" data-i18n-aria-label="site_name" />
+              <label for="custom-site-url" class="visually-hidden" data-i18n="site_url">站点地址</label>
+              <input id="custom-site-url" type="url" placeholder="站点地址，例如 https://www.perplexity.ai/" aria-label="站点地址" data-i18n-placeholder="site_url_placeholder" data-i18n-aria-label="site_url" />
               <div class="custom-site-actions">
-                <button id="cancel-custom-site" class="btn btn-ghost" type="button">取消</button>
-                <button id="add-custom-site" class="btn btn-primary" type="button">添加</button>
+                <button id="cancel-custom-site" class="btn btn-ghost" type="button" data-i18n="cancel">取消</button>
+                <button id="add-custom-site" class="btn btn-primary" type="button" data-i18n="add">添加</button>
               </div>
             </div>
           </div>
 
           <div id="settings-tab-appearance" class="settings-tab" data-tab="appearance">
-            <p class="floating-window-subtitle">主题模式</p>
+            <p class="floating-window-subtitle" data-i18n="theme_mode">主题模式</p>
             <div class="theme-options">
               <label class="theme-option">
                 <input type="radio" name="theme-mode" value="system" />
-                <span>跟随系统</span>
+                <span data-i18n="theme_system">跟随系统</span>
               </label>
               <label class="theme-option">
                 <input type="radio" name="theme-mode" value="light" />
-                <span>白色</span>
+                <span data-i18n="theme_light">白色</span>
               </label>
               <label class="theme-option">
                 <input type="radio" name="theme-mode" value="dark" />
-                <span>黑色</span>
+                <span data-i18n="theme_dark">黑色</span>
+              </label>
+            </div>
+            <p class="floating-window-subtitle" data-i18n="language_mode">语言</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input type="radio" name="locale-mode" value="auto" />
+                <span data-i18n="language_auto">跟随浏览器</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="locale-mode" value="zh" />
+                <span data-i18n="language_zh">中文</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="locale-mode" value="en" />
+                <span data-i18n="language_en">English</span>
               </label>
             </div>
           </div>
@@ -92,16 +107,16 @@
 
     <aside id="history-panel" class="right-panel hidden" role="dialog" aria-modal="true" aria-labelledby="history-title">
       <div class="panel-head">
-        <h2 id="history-title">历史</h2>
+        <h2 id="history-title" data-i18n="history_title">历史</h2>
         <div class="panel-head-actions">
-          <button id="history-clear" class="btn btn-ghost" type="button">清空</button>
-          <button id="history-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭">
+          <button id="history-clear" class="btn btn-ghost" type="button" data-i18n="clear">清空</button>
+          <button id="history-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="close" data-i18n-title="close">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
       </div>
       <div class="history-panel-body">
-        <p class="floating-window-subtitle">点击历史中的站点链接可回到对应页面</p>
+        <p class="floating-window-subtitle" data-i18n="history_subtitle">点击历史中的站点链接可回到对应页面</p>
         <ul id="history-list" class="history-list"></ul>
       </div>
     </aside>
