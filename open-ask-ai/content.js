@@ -164,11 +164,117 @@ function clickSend(site, inputEl) {
   });
 }
 
-function sendPrompt(prompt) {
+function dataUrlToBlob(dataUrl) {
+  const idx = dataUrl.indexOf(",");
+  if (idx < 0) return null;
+  const meta = dataUrl.slice(0, idx);
+  const body = dataUrl.slice(idx + 1);
+  const mimeMatch = meta.match(/^data:([^;]+);base64$/i);
+  if (!mimeMatch) return null;
+  const mimeType = mimeMatch[1] || "image/png";
+  const bin = atob(body);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
+
+function toImageFiles(images) {
+  return images
+    .map((item, index) => {
+      const type = String(item?.type || "image/png");
+      if (!type.startsWith("image/")) return null;
+      const blob = dataUrlToBlob(String(item?.dataUrl || ""));
+      if (!blob) return null;
+      const ext = type.split("/")[1] || "png";
+      const name = String(item?.name || `image-${Date.now()}-${index}.${ext}`);
+      return new File([blob], name, { type });
+    })
+    .filter(Boolean);
+}
+
+function buildDataTransfer(files) {
+  try {
+    const dt = new DataTransfer();
+    files.forEach((file) => dt.items.add(file));
+    return dt;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function attachByFileInput(files) {
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter((el) => !el.disabled && isVisible(el));
+  for (const input of inputs) {
+    try {
+      const dt = buildDataTransfer(files);
+      if (!dt) continue;
+      input.focus();
+      input.files = dt.files;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    } catch (_error) {
+      // Continue trying next candidate.
+    }
+  }
+  return false;
+}
+
+function attachByPaste(inputEl, files) {
+  if (!inputEl) return false;
+  const dt = buildDataTransfer(files);
+  if (!dt) return false;
+
+  try {
+    inputEl.focus();
+    const beforeEvent = new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertFromPaste",
+      dataTransfer: dt
+    });
+    inputEl.dispatchEvent(beforeEvent);
+  } catch (_error) {
+    // Continue fallback.
+  }
+
+  try {
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true
+    });
+    Object.defineProperty(pasteEvent, "clipboardData", { value: dt });
+    inputEl.dispatchEvent(pasteEvent);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function attachImages(inputEl, images) {
+  const files = toImageFiles(images);
+  if (!files.length) return false;
+  if (attachByFileInput(files)) return true;
+  return attachByPaste(inputEl, files);
+}
+
+async function sendPrompt(packet) {
   const site = currentSite() || GENERIC_SITE;
+  const message = typeof packet === "string" ? packet : String(packet?.message || "");
+  const images = Array.isArray(packet?.images) ? packet.images : [];
+
   const inputEl = findFirst(site.inputSelectors);
-  if (!setInputValue(inputEl, prompt)) return;
-  setTimeout(() => clickSend(site, inputEl), 80);
+  if (!inputEl) return;
+
+  const hasText = message.length > 0;
+  if (hasText && !setInputValue(inputEl, message)) return;
+  if (!hasText) inputEl.focus();
+
+  if (images.length) {
+    await attachImages(inputEl, images);
+  }
+
+  setTimeout(() => clickSend(site, inputEl), images.length ? 220 : 80);
 }
 
 function newChat() {
@@ -186,16 +292,120 @@ function newChat() {
   location.href = targetUrl;
 }
 
+function isSelectionInsideEditable(range) {
+  const node = range.commonAncestorContainer?.nodeType === Node.ELEMENT_NODE
+    ? range.commonAncestorContainer
+    : range.commonAncestorContainer?.parentElement;
+  if (!node) return false;
+  return Boolean(node.closest?.("textarea, input, [contenteditable='true']"));
+}
+
+function quoteBtnLabel() {
+  const lang = String(navigator.language || "").toLowerCase();
+  return lang.startsWith("zh") ? "引用" : "Quote";
+}
+
+function removeQuoteButton() {
+  const old = document.querySelector(".oa-quote-float-btn");
+  if (old) old.remove();
+}
+
+function createQuoteButton(rect, text) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "oa-quote-float-btn";
+  button.textContent = quoteBtnLabel();
+  Object.assign(button.style, {
+    position: "absolute",
+    zIndex: "2147483646",
+    left: `${rect.left + window.scrollX}px`,
+    top: `${rect.bottom + window.scrollY + 8}px`,
+    padding: "4px 8px",
+    border: "1px solid rgba(255,255,255,0.2)",
+    borderRadius: "8px",
+    background: "rgba(20,20,20,0.9)",
+    color: "#fff",
+    fontSize: "12px",
+    lineHeight: "16px",
+    cursor: "pointer",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.35)"
+  });
+
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    window.parent.postMessage(
+      {
+        type: "QUOTE_TEXT",
+        payload: {
+          text,
+          siteId: (currentSite() || GENERIC_SITE).id,
+          url: location.href
+        }
+      },
+      "*"
+    );
+    removeQuoteButton();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+  });
+
+  return button;
+}
+
+function debounce(fn, wait) {
+  let timer = null;
+  return (...args) => {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(() => fn(...args), wait);
+  };
+}
+
+const showQuoteButton = debounce(() => {
+  try {
+    removeQuoteButton();
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    if (!text || !selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (range.collapsed || isSelectionInsideEditable(range)) return;
+    const clipped = text.slice(0, 2500);
+    const rect = range.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    document.body.appendChild(createQuoteButton(rect, clipped));
+  } catch (_error) {
+    // Ignore UI-only errors.
+  }
+}, 160);
+
 window.addEventListener("message", (event) => {
   const data = event.data;
   if (!data || !data.type) return;
 
   if (data.type === "CHAT_MESSAGE") {
-    sendPrompt(data.message || "");
+    void sendPrompt({
+      message: data.message || "",
+      images: data.payload?.images || []
+    });
   } else if (data.type === "NEW_CHAT") {
     newChat();
   }
 });
+
+document.addEventListener("mouseup", showQuoteButton);
+document.addEventListener("touchend", showQuoteButton);
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key !== "Escape") return;
+    window.parent.postMessage({ type: "PANE_ESCAPE" }, "*");
+  },
+  true
+);
+document.addEventListener("click", (event) => {
+  if (event.target && event.target.closest(".oa-quote-float-btn")) return;
+  removeQuoteButton();
+});
+window.addEventListener("scroll", removeQuoteButton, true);
 
 let lastHref = location.href;
 function postUrlUpdate() {

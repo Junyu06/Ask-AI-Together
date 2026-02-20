@@ -9,6 +9,7 @@
   <body>
     <div id="panes" class="panes"></div>
     <div id="panel-backdrop" class="panel-backdrop hidden" aria-hidden="true"></div>
+    <div id="pane-focus-backdrop" class="panel-backdrop pane-focus-backdrop hidden" aria-hidden="true"></div>
 
     <section id="input-bubble" class="bubble bubble-input" aria-label="输入与操作" data-i18n-aria-label="input_bubble_aria">
       <div class="input-row">
@@ -25,6 +26,7 @@
           </button>
         </div>
         <div class="prompt-wrap">
+          <div id="attachment-chips" class="attachment-chips hidden" aria-label="已添加图片"></div>
           <div id="mention-chips" class="mention-chips hidden" aria-label="已选择站点" data-i18n-aria-label="selected_sites"></div>
           <label for="prompt" class="visually-hidden" data-i18n="prompt_label">输入问题</label>
           <textarea id="prompt" placeholder="输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题" data-i18n-placeholder="prompt_placeholder" data-i18n-aria-label="prompt_label"></textarea>

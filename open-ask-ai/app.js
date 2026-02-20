@@ -32,18 +32,23 @@ let isComposing = false;
 let mentionState = null;
 let mentionSiteIds = [];
 let localeMode = "auto";
+let pendingImageAttachments = [];
+let focusedSiteId = null;
+let paneFocusButtonPosBySite = {};
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
 const historyListEl = document.getElementById("history-list");
 const siteCheckboxesEl = document.getElementById("site-checkboxes");
 const panelBackdropEl = document.getElementById("panel-backdrop");
+const paneFocusBackdropEl = document.getElementById("pane-focus-backdrop");
 const rightPanelEl = document.getElementById("right-panel");
 const historyPanelEl = document.getElementById("history-panel");
 const panelTitleEl = document.getElementById("panel-title");
 const settingsSidebarEl = document.querySelector(".settings-sidebar");
 const mentionDropdownEl = document.getElementById("mention-dropdown");
 const mentionChipsEl = document.getElementById("mention-chips");
+const attachmentChipsEl = document.getElementById("attachment-chips");
 
 const mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
 const I18N = {
@@ -83,7 +88,12 @@ const I18N = {
     delete: "删除",
     drag_sort: "拖拽排序",
     open_site: "打开站点",
-    remove: "移除"
+    remove: "移除",
+    image_paste_only: "仅支持图片粘贴/拖入",
+    image_attachment: "图片附件",
+    image_placeholder_history: "[图片]",
+    focus_pane: "放大此站点",
+    unfocus_pane: "退出放大"
   },
   en: {
     input_bubble_aria: "Input and actions",
@@ -121,7 +131,12 @@ const I18N = {
     delete: "Delete",
     drag_sort: "Drag to sort",
     open_site: "Open site",
-    remove: "Remove"
+    remove: "Remove",
+    image_paste_only: "Images only for paste/drop",
+    image_attachment: "Image attachment",
+    image_placeholder_history: "[Image]",
+    focus_pane: "Expand this site",
+    unfocus_pane: "Exit expanded view"
   }
 };
 let locale = "en";
@@ -177,6 +192,8 @@ async function setLocaleMode(mode) {
   applyI18n();
   renderSiteSettings();
   renderMentionChips();
+  renderAttachmentChips();
+  applyFocusedPaneState();
   await renderHistory();
   panelTitleEl.textContent = !rightPanelEl.classList.contains("hidden") ? t("settings_title") : t("history_title");
 }
@@ -224,6 +241,7 @@ function renderPanes() {
   const sites = orderedSites().filter((site) => selectedSet.has(site.id));
 
   if (!sites.length) {
+    exitPaneFocus();
     panesEl.innerHTML = "";
     return;
   }
@@ -252,6 +270,10 @@ function renderPanes() {
   });
 
   panesEl.replaceChildren(frag);
+  if (focusedSiteId && !sites.some((site) => site.id === focusedSiteId)) {
+    focusedSiteId = null;
+  }
+  applyFocusedPaneState();
   initPaneResizers();
 }
 
@@ -259,8 +281,63 @@ function createPane(site) {
   const pane = document.createElement("div");
   pane.className = "pane";
   pane.dataset.siteId = site.id;
-  pane.innerHTML = `<iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>`;
+  pane.innerHTML = `
+    <button type="button" class="pane-focus-btn" data-site-id="${escapeHtml(site.id)}" aria-label="${escapeHtml(t("focus_pane"))}" title="${escapeHtml(t("focus_pane"))}">
+      <svg class="icon pane-focus-expand" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/>
+      </svg>
+      <svg class="icon pane-focus-collapse hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 9H4V4M15 9h5V4M9 15H4v5M15 15h5v5"/>
+      </svg>
+    </button>
+    <iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>
+  `;
+  const btn = pane.querySelector(".pane-focus-btn");
+  const savedPos = paneFocusButtonPosBySite[site.id];
+  if (btn && savedPos && Number.isFinite(savedPos.left) && Number.isFinite(savedPos.top)) {
+    btn.style.right = "auto";
+    btn.style.left = `${savedPos.left}px`;
+    btn.style.top = `${savedPos.top}px`;
+  }
   return pane;
+}
+
+function applyFocusedPaneState() {
+  const panes = Array.from(panesEl.querySelectorAll(".pane"));
+  const hasFocus = !!focusedSiteId;
+
+  panesEl.classList.toggle("focus-mode", hasFocus);
+  document.body.classList.toggle("pane-focus-mode", hasFocus);
+  paneFocusBackdropEl.classList.toggle("hidden", !hasFocus);
+
+  panes.forEach((pane) => {
+    const isFocused = hasFocus && pane.dataset.siteId === focusedSiteId;
+    pane.classList.toggle("focused", isFocused);
+    const btn = pane.querySelector(".pane-focus-btn");
+    if (!btn) return;
+    const expandIcon = btn.querySelector(".pane-focus-expand");
+    const collapseIcon = btn.querySelector(".pane-focus-collapse");
+    if (expandIcon) expandIcon.classList.toggle("hidden", isFocused);
+    if (collapseIcon) collapseIcon.classList.toggle("hidden", !isFocused);
+    btn.setAttribute("title", isFocused ? t("unfocus_pane") : t("focus_pane"));
+    btn.setAttribute("aria-label", isFocused ? t("unfocus_pane") : t("focus_pane"));
+  });
+}
+
+function enterPaneFocus(siteId) {
+  if (!siteId || !selectedSiteIds.includes(siteId)) return;
+  focusedSiteId = siteId;
+  mentionSiteIds = [siteId];
+  renderMentionChips();
+  applyFocusedPaneState();
+}
+
+function exitPaneFocus() {
+  if (!focusedSiteId) return;
+  focusedSiteId = null;
+  mentionSiteIds = [];
+  renderMentionChips();
+  applyFocusedPaneState();
 }
 
 function renderSiteSettings() {
@@ -493,20 +570,109 @@ async function patchHistoryUrl(entryId, siteId, url) {
   }
 }
 
-function sendToFrames(type, message) {
+function sendToFrames(type, message, payload = {}) {
   const frames = Array.from(document.querySelectorAll("iframe"));
   frames.forEach((frame) => {
-    frame.contentWindow.postMessage({ type, message, config: { siteId: frame.dataset.siteId } }, "*");
+    frame.contentWindow.postMessage({ type, message, payload, config: { siteId: frame.dataset.siteId } }, "*");
   });
 }
 
-function sendToTargetFrames(type, message, targetSiteIds) {
+function sendToTargetFrames(type, message, targetSiteIds, payload = {}) {
   const targetSet = new Set(targetSiteIds);
   const frames = Array.from(document.querySelectorAll("iframe"));
   frames.forEach((frame) => {
     if (!targetSet.has(frame.dataset.siteId)) return;
-    frame.contentWindow.postMessage({ type, message, config: { siteId: frame.dataset.siteId } }, "*");
+    frame.contentWindow.postMessage({ type, message, payload, config: { siteId: frame.dataset.siteId } }, "*");
   });
+}
+
+function normalizeQuotedText(text) {
+  const clean = String(text || "").replaceAll(/\s+\n/g, "\n").replaceAll(/\n{3,}/g, "\n\n").trim();
+  if (!clean) return "";
+  return clean
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
+function insertTextAtCursor(text) {
+  const value = promptEl.value || "";
+  const start = promptEl.selectionStart ?? value.length;
+  const end = promptEl.selectionEnd ?? start;
+  promptEl.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
+  const cursor = start + text.length;
+  promptEl.setSelectionRange(cursor, cursor);
+}
+
+function applyQuoteTextToPrompt(rawText) {
+  const quoted = normalizeQuotedText(rawText);
+  if (!quoted) return;
+  const needsBreak = promptEl.value.trim() ? "\n\n" : "";
+  insertTextAtCursor(`${needsBreak}${quoted}\n`);
+  autoResizePrompt();
+  promptEl.focus();
+  refreshMentionDropdown();
+}
+
+function bytesLabel(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function renderAttachmentChips() {
+  attachmentChipsEl.innerHTML = "";
+  if (!pendingImageAttachments.length) {
+    attachmentChipsEl.classList.add("hidden");
+    return;
+  }
+
+  pendingImageAttachments.forEach((item) => {
+    const chip = document.createElement("div");
+    chip.className = "attachment-chip";
+    chip.innerHTML = `
+      <img class="thumb" src="${escapeHtml(item.dataUrl)}" alt="${escapeHtml(t("image_attachment"))}" />
+      <span class="label">${escapeHtml(item.name || t("image_attachment"))}${item.size ? ` (${bytesLabel(item.size)})` : ""}</span>
+      <button type="button" class="remove" aria-label="${escapeHtml(t("remove"))}" title="${escapeHtml(t("remove"))}">×</button>
+    `;
+    chip.querySelector(".remove").addEventListener("click", () => {
+      pendingImageAttachments = pendingImageAttachments.filter((x) => x.id !== item.id);
+      renderAttachmentChips();
+    });
+    attachmentChipsEl.appendChild(chip);
+  });
+
+  attachmentChipsEl.classList.remove("hidden");
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("File read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function appendImagesFromFiles(files) {
+  const imageFiles = Array.from(files || []).filter((file) => file && String(file.type || "").startsWith("image/"));
+  if (!imageFiles.length) return false;
+
+  for (const file of imageFiles.slice(0, 6)) {
+    const dataUrl = await readFileAsDataUrl(file);
+    pendingImageAttachments.push({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      name: file.name || t("image_attachment"),
+      type: file.type || "image/png",
+      size: Number(file.size) || 0,
+      dataUrl
+    });
+  }
+
+  pendingImageAttachments = pendingImageAttachments.slice(0, 6);
+  renderAttachmentChips();
+  return true;
 }
 
 function normalizeMentionKey(text) {
@@ -536,16 +702,20 @@ function getMentionCandidates(query) {
     .slice(0, 9);
 }
 
-function getMentionContext() {
+function getPickerContext() {
   const value = promptEl.value;
   const caret = promptEl.selectionStart ?? value.length;
-  const atPos = value.lastIndexOf("@", Math.max(0, caret - 1));
-  if (atPos < 0) return null;
-  const before = atPos > 0 ? value[atPos - 1] : "";
+  const scanTo = Math.max(0, caret - 1);
+  const atPos = value.lastIndexOf("@", scanTo);
+  const hashPos = value.lastIndexOf("#", scanTo);
+  const pos = Math.max(atPos, hashPos);
+  if (pos < 0) return null;
+  const trigger = value[pos];
+  const before = pos > 0 ? value[pos - 1] : "";
   if (before && !/\s/.test(before)) return null;
-  const token = value.slice(atPos + 1, caret);
+  const token = value.slice(pos + 1, caret);
   if (/\s/.test(token)) return null;
-  return { atPos, caret, token };
+  return { trigger, atPos: pos, caret, token };
 }
 
 function applyMentionActive() {
@@ -566,12 +736,16 @@ function insertMentionCandidate(index) {
   const nextCaret = head.length;
   promptEl.selectionStart = nextCaret;
   promptEl.selectionEnd = nextCaret;
-  if (mentionSiteIds.includes(site.id)) {
-    mentionSiteIds = mentionSiteIds.filter((id) => id !== site.id);
+  if (mentionState.mode === "focus") {
+    enterPaneFocus(site.id);
   } else {
-    mentionSiteIds.push(site.id);
+    if (mentionSiteIds.includes(site.id)) {
+      mentionSiteIds = mentionSiteIds.filter((id) => id !== site.id);
+    } else {
+      mentionSiteIds.push(site.id);
+    }
+    renderMentionChips();
   }
-  renderMentionChips();
   autoResizePrompt();
   promptEl.focus();
   hideMentionDropdown();
@@ -613,7 +787,7 @@ function renderMentionChips() {
 }
 
 function refreshMentionDropdown() {
-  const ctx = getMentionContext();
+  const ctx = getPickerContext();
   if (!ctx) {
     hideMentionDropdown();
     return;
@@ -625,11 +799,13 @@ function refreshMentionDropdown() {
     return;
   }
 
+  const mode = ctx.trigger === "#" ? "focus" : "mention";
   mentionState = {
     atPos: ctx.atPos,
     caret: ctx.caret,
     token: ctx.token,
     candidates,
+    mode,
     activeIndex: 0
   };
 
@@ -642,7 +818,7 @@ function refreshMentionDropdown() {
       <span class="index">${index + 1}</span>
       <img src="${getFavicon(site.url)}" alt="" class="site-icon" />
       <span class="name">${escapeHtml(site.name)}</span>
-      <span class="id">@${escapeHtml(site.id)}</span>
+      <span class="id">${mode === "focus" ? "#" : "@"}${escapeHtml(site.id)}</span>
     `;
     item.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -657,23 +833,33 @@ function refreshMentionDropdown() {
 
 async function onSend() {
   const message = promptEl.value.trim();
-  if (!message) return;
+  const images = pendingImageAttachments.map((item) => ({
+    name: item.name,
+    type: item.type,
+    size: item.size,
+    dataUrl: item.dataUrl
+  }));
+  if (!message && !images.length) return;
 
   const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
   if (!targetSiteIds.length) return;
 
+  const payload = { images };
   if (mentionSiteIds.length) {
-    sendToTargetFrames("CHAT_MESSAGE", message, targetSiteIds);
+    sendToTargetFrames("CHAT_MESSAGE", message, targetSiteIds, payload);
   } else {
-    sendToFrames("CHAT_MESSAGE", message);
+    sendToFrames("CHAT_MESSAGE", message, payload);
   }
 
-  const entry = await appendHistory(message, targetSiteIds);
+  const historyPrompt = message || t("image_placeholder_history");
+  const entry = await appendHistory(historyPrompt, targetSiteIds);
   pendingHistoryBySite = {};
   targetSiteIds.forEach((siteId) => {
     pendingHistoryBySite[siteId] = entry.id;
   });
   promptEl.value = "";
+  pendingImageAttachments = [];
+  renderAttachmentChips();
   mentionSiteIds = [];
   renderMentionChips();
   autoResizePrompt();
@@ -686,6 +872,7 @@ function autoResizePrompt() {
 }
 
 function openSettingsPanel(tab = "sites") {
+  exitPaneFocus();
   historyPanelEl.classList.add("hidden");
   rightPanelEl.classList.remove("hidden");
   panelTitleEl.textContent = t("settings_title");
@@ -694,6 +881,7 @@ function openSettingsPanel(tab = "sites") {
 }
 
 function openHistoryPanel() {
+  exitPaneFocus();
   rightPanelEl.classList.add("hidden");
   historyPanelEl.classList.remove("hidden");
   panelTitleEl.textContent = t("history_title");
@@ -754,6 +942,93 @@ async function setThemeMode(mode) {
 }
 
 function bindEvents() {
+  let paneBtnDrag = null;
+
+  window.addEventListener("mousemove", (event) => {
+    if (!paneBtnDrag) return;
+    const { btn, pane, startX, startY, baseLeft, baseTop } = paneBtnDrag;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (!paneBtnDrag.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      paneBtnDrag.moved = true;
+      btn.classList.add("dragging");
+    }
+    if (!paneBtnDrag.moved) return;
+
+    const maxLeft = Math.max(0, pane.clientWidth - btn.offsetWidth);
+    const maxTop = Math.max(0, pane.clientHeight - btn.offsetHeight);
+    const nextLeft = Math.max(0, Math.min(maxLeft, baseLeft + dx));
+    const nextTop = Math.max(0, Math.min(maxTop, baseTop + dy));
+    btn.style.right = "auto";
+    btn.style.left = `${nextLeft}px`;
+    btn.style.top = `${nextTop}px`;
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!paneBtnDrag) return;
+    const { btn, pane, moved } = paneBtnDrag;
+    if (moved) {
+      btn.dataset.dragMovedAt = String(Date.now());
+      paneFocusButtonPosBySite[pane.dataset.siteId] = {
+        left: Number.parseFloat(btn.style.left) || 10,
+        top: Number.parseFloat(btn.style.top) || 10
+      };
+    }
+    btn.classList.remove("dragging");
+    paneBtnDrag = null;
+    document.body.style.userSelect = "";
+  });
+
+  panesEl.addEventListener("mousedown", (event) => {
+    const btn = event.target.closest(".pane-focus-btn");
+    if (!btn || event.button !== 0) return;
+    const pane = btn.closest(".pane");
+    if (!pane) return;
+
+    const paneRect = pane.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    const baseLeft = btn.style.left ? Number.parseFloat(btn.style.left) : btnRect.left - paneRect.left;
+    const baseTop = btn.style.top ? Number.parseFloat(btn.style.top) : btnRect.top - paneRect.top;
+    btn.style.right = "auto";
+    btn.style.left = `${baseLeft}px`;
+    btn.style.top = `${baseTop}px`;
+
+    paneBtnDrag = {
+      btn,
+      pane,
+      startX: event.clientX,
+      startY: event.clientY,
+      baseLeft,
+      baseTop,
+      moved: false
+    };
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (mentionState) return;
+    if (!focusedSiteId) return;
+    if (event.target && event.target.closest(".right-panel")) return;
+    event.preventDefault();
+    exitPaneFocus();
+  });
+
+  panesEl.addEventListener("click", (event) => {
+    const btn = event.target.closest(".pane-focus-btn");
+    if (!btn) return;
+    const dragMovedAt = Number(btn.dataset.dragMovedAt || "0");
+    if (Date.now() - dragMovedAt < 240) return;
+    const siteId = btn.getAttribute("data-site-id");
+    if (!siteId) return;
+    if (focusedSiteId === siteId) {
+      exitPaneFocus();
+    } else {
+      enterPaneFocus(siteId);
+    }
+  });
+  paneFocusBackdropEl.addEventListener("click", exitPaneFocus);
+
   document.getElementById("send").addEventListener("click", onSend);
   document.getElementById("new-chat").addEventListener("click", () => {
     sendToFrames("NEW_CHAT", "NEW_CHAT");
@@ -816,6 +1091,39 @@ function bindEvents() {
   promptEl.addEventListener("input", () => {
     autoResizePrompt();
     refreshMentionDropdown();
+  });
+  promptEl.addEventListener("paste", (event) => {
+    const files = event.clipboardData?.files;
+    if (!files || !files.length) return;
+    const hasImage = Array.from(files).some((file) => String(file.type || "").startsWith("image/"));
+    if (!hasImage) return;
+    event.preventDefault();
+    void appendImagesFromFiles(files);
+  });
+  promptEl.addEventListener("dragover", (event) => {
+    event.preventDefault();
+  });
+  promptEl.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const transfer = event.dataTransfer;
+    if (!transfer) return;
+
+    const files = transfer.files;
+    const hasFiles = files && files.length;
+    if (hasFiles) {
+      void appendImagesFromFiles(files);
+    }
+
+    const droppedText = transfer.getData("text/plain") || transfer.getData("text/uri-list") || "";
+    if (droppedText) {
+      insertTextAtCursor(droppedText);
+      autoResizePrompt();
+      refreshMentionDropdown();
+    }
+
+    if (hasFiles || droppedText) {
+      promptEl.focus();
+    }
   });
   promptEl.addEventListener("click", refreshMentionDropdown);
   promptEl.addEventListener("keyup", (e) => {
@@ -915,7 +1223,23 @@ function bindEvents() {
   });
 
   window.addEventListener("message", (event) => {
-    if (!event.data || event.data.type !== "UPDATE_HISTORY") return;
+    if (!event.data || !event.data.type) return;
+    if (event.data.type === "PANE_ESCAPE") {
+      if (mentionState) {
+        hideMentionDropdown();
+        return;
+      }
+      if (focusedSiteId) {
+        exitPaneFocus();
+      }
+      return;
+    }
+    if (event.data.type === "QUOTE_TEXT") {
+      const raw = typeof event.data.payload === "string" ? event.data.payload : event.data.payload?.text;
+      applyQuoteTextToPrompt(raw || "");
+      return;
+    }
+    if (event.data.type !== "UPDATE_HISTORY") return;
     const payload = event.data.payload || {};
     if (payload.siteId && payload.url) {
       siteUrlState[payload.siteId] = payload.url;
@@ -998,6 +1322,7 @@ async function init() {
   await renderHistory();
   applyTheme();
   autoResizePrompt();
+  renderAttachmentChips();
   bindEvents();
 }
 
