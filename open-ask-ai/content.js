@@ -58,6 +58,14 @@ const SITES = [
     newChatSelectors: ['a[data-sidebar="menu-button"]', 'a[href="/"]']
   },
   {
+    id: "claude",
+    matchHosts: ["claude.ai"],
+    homeUrl: "https://claude.ai/",
+    inputSelectors: ['div[contenteditable="true"]', "textarea"],
+    sendSelectors: ['button[aria-label*="Send" i]', 'button[type="submit"]'],
+    newChatSelectors: ['a[href="/new"]', 'button[aria-label*="New chat" i]', 'a[href="/"]']
+  },
+  {
     id: "gemini",
     matchHosts: ["gemini.google.com"],
     homeUrl: "https://gemini.google.com/",

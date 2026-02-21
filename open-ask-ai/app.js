@@ -19,6 +19,7 @@ const BUILTIN_SITES = [
   { id: "doubao", name: "Doubao", url: "https://www.doubao.com/" },
   { id: "yuanbao", name: "Yuanbao", url: "https://yuanbao.tencent.com/" },
   { id: "grok", name: "Grok", url: "https://grok.com/" },
+  { id: "claude", name: "Claude", url: "https://claude.ai/" },
   { id: "gemini", name: "Gemini", url: "https://gemini.google.com/" }
 ];
 
