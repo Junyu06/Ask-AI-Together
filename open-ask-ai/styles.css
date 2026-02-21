@@ -6,6 +6,7 @@
   --text-muted: #666666;
   --line: #d7d7d7;
   --line-strong: #bbbbbb;
+  --accent: #2563eb;
   --shadow: 0 14px 40px rgba(0, 0, 0, 0.14);
   --radius: 14px;
   --radius-sm: 10px;
@@ -13,6 +14,7 @@
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0f0f0f;
   --surface: #181818;
   --surface-2: #222222;
@@ -20,6 +22,7 @@
   --text-muted: #a3a3a3;
   --line: #363636;
   --line-strong: #4a4a4a;
+  --accent: #60a5fa;
   --shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
 }
 
@@ -427,6 +430,8 @@ body {
   line-height: 1.45;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
   overflow-y: auto;
+  scroll-margin-top: 24px;
+  scroll-margin-bottom: 24px;
 }
 
 #prompt::placeholder {
@@ -435,6 +440,12 @@ body {
 
 #prompt:focus {
   border-color: var(--line-strong);
+}
+
+#prompt:focus-visible {
+  border-color: var(--line-strong);
+  outline: 2px solid var(--line-strong);
+  outline-offset: 2px;
 }
 
 .btn {
@@ -514,6 +525,7 @@ body {
   background: rgba(0, 0, 0, 0.24);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  overscroll-behavior: contain;
   transition: opacity 0.2s ease-out;
 }
 
@@ -582,6 +594,7 @@ body.pane-focus-mode .bubble {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overscroll-behavior: contain;
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
 
@@ -653,7 +666,8 @@ body.pane-focus-mode .bubble {
 
 .settings-content {
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .settings-tab {
@@ -682,17 +696,6 @@ body.pane-focus-mode .bubble {
   margin: 0 0 12px;
   font-size: 13px;
   color: var(--text-muted);
-}
-
-.panes-per-row-setting {
-  margin-bottom: 12px;
-}
-
-.panes-per-row-label {
-  display: block;
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
 }
 
 .panes-per-row-options {
@@ -823,8 +826,9 @@ body.pane-focus-mode .bubble {
 
 .toggle-switch {
   position: relative;
-  width: 48px;
-  height: 28px;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .toggle-switch input {
@@ -837,32 +841,33 @@ body.pane-focus-mode .bubble {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: #bbb;
-  transition: var(--trans);
+  background: var(--line);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .toggle-switch .slider::before {
   content: "";
   position: absolute;
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface);
   left: 2px;
   top: 2px;
-  transition: var(--trans);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
 }
 
 .toggle-switch input:checked + .slider {
-  background: #222;
-}
-
-:root[data-theme="dark"] .toggle-switch input:checked + .slider {
-  background: #d7d7d7;
+  background: var(--accent);
 }
 
 .toggle-switch input:checked + .slider::before {
-  transform: translateX(20px);
+  transform: translateX(16px);
+}
+
+.toggle-switch input:focus-visible + .slider {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
 
 .floating-window-foot {
@@ -919,6 +924,7 @@ body.pane-focus-mode .bubble {
   padding: 8px;
   overflow: auto;
   flex: 1;
+  overscroll-behavior: contain;
 }
 
 .history-item {
@@ -1057,4 +1063,57 @@ body.pane-focus-mode .bubble {
     right: 0;
     height: 100vh;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .right-panel,
+  .panel-backdrop,
+  .settings-tab,
+  .theme-option,
+  .sidebar-item,
+  .site-card,
+  .history-item,
+  .btn,
+  .toggle-switch .slider,
+  .toggle-switch .slider::before {
+    transition-duration: 0.01ms !important;
+  }
+  .settings-tab.active {
+    animation: none;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 8px;
+  z-index: 200;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  text-decoration: none;
+  transition: top 0.15s ease-out;
+  cursor: pointer;
+}
+
+.skip-link:focus {
+  top: 8px;
+  outline: 2px solid var(--line-strong);
+  outline-offset: 2px;
+}
+
+.btn,
+.sidebar-item,
+.theme-option,
+.site-card,
+.history-item,
+.history-link,
+.mention-item,
+.pane-toolbar .pane-focus-btn,
+.pane-toolbar .pane-open-btn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }

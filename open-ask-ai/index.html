@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <a href="#prompt" class="skip-link" data-i18n="skip_to_input">跳过到输入框</a>
     <div id="panes" class="panes"></div>
     <div id="panel-backdrop" class="panel-backdrop hidden" aria-hidden="true"></div>
     <div id="pane-focus-backdrop" class="panel-backdrop pane-focus-backdrop hidden" aria-hidden="true"></div>
@@ -29,7 +30,7 @@
           <div id="attachment-chips" class="attachment-chips hidden" aria-label="已添加图片"></div>
           <div id="mention-chips" class="mention-chips hidden" aria-label="已选择站点" data-i18n-aria-label="selected_sites"></div>
           <label for="prompt" class="visually-hidden" data-i18n="prompt_label">输入问题</label>
-          <textarea id="prompt" placeholder="输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题" data-i18n-placeholder="prompt_placeholder" data-i18n-aria-label="prompt_label"></textarea>
+          <textarea id="prompt" name="prompt" autocomplete="off" placeholder="输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题" data-i18n-placeholder="prompt_placeholder" data-i18n-aria-label="prompt_label"></textarea>
           <div id="mention-dropdown" class="mention-dropdown hidden" aria-hidden="true"></div>
         </div>
         <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送" title="发送" data-i18n-aria-label="send" data-i18n-title="send">
@@ -49,6 +50,7 @@
       <div class="panel-body">
         <nav class="settings-sidebar" aria-label="设置类别" data-i18n-aria-label="settings_categories">
           <button class="sidebar-item active" data-settings-tab="sites" type="button" data-i18n="sites_tab">站点</button>
+          <button class="sidebar-item" data-settings-tab="layout" type="button" data-i18n="layout_tab">布局</button>
           <button class="sidebar-item" data-settings-tab="appearance" type="button" data-i18n="appearance_tab">外观</button>
           <button class="sidebar-item" data-settings-tab="language" type="button" data-i18n="language_mode">语言</button>
           <button class="sidebar-item" data-settings-tab="history" type="button" data-i18n="history_settings_tab">历史显示</button>
@@ -56,31 +58,6 @@
         <section id="settings-content" class="settings-content">
           <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">
             <p class="floating-window-subtitle" data-i18n="sites_subtitle">站点选择与排序</p>
-            <div class="panes-per-row-setting">
-              <span class="panes-per-row-label" data-i18n="panes_per_row">每排站点数</span>
-              <div class="theme-options panes-per-row-options">
-                <label class="theme-option">
-                  <input type="radio" name="panes-per-row" value="0" />
-                  <span data-i18n="panes_per_row_all">全部并排</span>
-                </label>
-                <label class="theme-option">
-                  <input type="radio" name="panes-per-row" value="1" />
-                  <span data-i18n="panes_per_row_1">1 个</span>
-                </label>
-                <label class="theme-option">
-                  <input type="radio" name="panes-per-row" value="2" />
-                  <span data-i18n="panes_per_row_2">2 个</span>
-                </label>
-                <label class="theme-option">
-                  <input type="radio" name="panes-per-row" value="3" />
-                  <span data-i18n="panes_per_row_3">3 个</span>
-                </label>
-                <label class="theme-option">
-                  <input type="radio" name="panes-per-row" value="4" />
-                  <span data-i18n="panes_per_row_4">4 个</span>
-                </label>
-              </div>
-            </div>
             <ul id="site-checkboxes" class="site-checkboxes"></ul>
             <div class="floating-window-foot">
               <button id="save-sites" class="btn btn-ghost" type="button" data-i18n="save">保存</button>
@@ -88,13 +65,39 @@
             </div>
             <div id="custom-site-form" class="custom-site-form hidden">
               <label for="custom-site-name" class="visually-hidden" data-i18n="site_name">站点名称</label>
-              <input id="custom-site-name" type="text" placeholder="站点名称，例如 Perplexity" aria-label="站点名称" data-i18n-placeholder="site_name_placeholder" data-i18n-aria-label="site_name" />
+              <input id="custom-site-name" name="site-name" type="text" autocomplete="off" placeholder="站点名称，例如 Perplexity" aria-label="站点名称" data-i18n-placeholder="site_name_placeholder" data-i18n-aria-label="site_name" />
               <label for="custom-site-url" class="visually-hidden" data-i18n="site_url">站点地址</label>
-              <input id="custom-site-url" type="url" placeholder="站点地址，例如 https://www.perplexity.ai/" aria-label="站点地址" data-i18n-placeholder="site_url_placeholder" data-i18n-aria-label="site_url" />
+              <input id="custom-site-url" name="site-url" type="url" autocomplete="url" placeholder="站点地址，例如 https://www.perplexity.ai/" aria-label="站点地址" data-i18n-placeholder="site_url_placeholder" data-i18n-aria-label="site_url" />
               <div class="custom-site-actions">
                 <button id="cancel-custom-site" class="btn btn-ghost" type="button" data-i18n="cancel">取消</button>
                 <button id="add-custom-site" class="btn btn-primary" type="button" data-i18n="add">添加</button>
               </div>
+            </div>
+          </div>
+
+          <div id="settings-tab-layout" class="settings-tab" data-tab="layout">
+            <p class="floating-window-subtitle" data-i18n="panes_per_row">每排站点数</p>
+            <div class="theme-options panes-per-row-options">
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="0" />
+                <span data-i18n="panes_per_row_all">全部并排</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="1" />
+                <span data-i18n="panes_per_row_1">1 个</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="2" />
+                <span data-i18n="panes_per_row_2">2 个</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="3" />
+                <span data-i18n="panes_per_row_3">3 个</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="4" />
+                <span data-i18n="panes_per_row_4">4 个</span>
+              </label>
             </div>
           </div>
 
@@ -144,9 +147,9 @@
             </div>
             <div id="history-summary-config" class="custom-site-form">
               <label for="history-summary-url" class="visually-hidden" data-i18n="ollama_url">Ollama URL</label>
-              <input id="history-summary-url" type="url" placeholder="http://127.0.0.1:11434" aria-label="Ollama URL" data-i18n-placeholder="ollama_url_placeholder" data-i18n-aria-label="ollama_url" />
+              <input id="history-summary-url" name="ollama-url" type="url" autocomplete="url" placeholder="http://127.0.0.1:11434" aria-label="Ollama URL" data-i18n-placeholder="ollama_url_placeholder" data-i18n-aria-label="ollama_url" />
               <label for="history-summary-model" class="visually-hidden" data-i18n="ollama_model">Ollama Model</label>
-              <input id="history-summary-model" type="text" placeholder="qwen2.5:7b-instruct" aria-label="Ollama Model" data-i18n-placeholder="ollama_model_placeholder" data-i18n-aria-label="ollama_model" />
+              <input id="history-summary-model" name="ollama-model" type="text" autocomplete="off" placeholder="qwen2.5:7b-instruct" aria-label="Ollama Model" data-i18n-placeholder="ollama_model_placeholder" data-i18n-aria-label="ollama_model" spellcheck="false" />
               <div class="custom-site-actions">
                 <button id="save-history-summary" class="btn btn-primary" type="button" data-i18n="save">保存</button>
               </div>

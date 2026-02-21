@@ -79,14 +79,15 @@ const I18N = {
     close: "关闭",
     settings_categories: "设置类别",
     sites_tab: "站点",
+    layout_tab: "布局",
     appearance_tab: "外观",
     sites_subtitle: "站点选择与排序",
     save: "保存",
     add_site: "添加站点",
     site_name: "站点名称",
     site_url: "站点地址",
-    site_name_placeholder: "站点名称，例如 Perplexity",
-    site_url_placeholder: "站点地址，例如 https://www.perplexity.ai/",
+    site_name_placeholder: "站点名称，例如 Perplexity…",
+    site_url_placeholder: "站点地址，例如 https://www.perplexity.ai/…",
     cancel: "取消",
     add: "添加",
     theme_mode: "主题模式",
@@ -96,8 +97,8 @@ const I18N = {
     history_summary_enable: "使用本地 Ollama 生成历史摘要",
     ollama_url: "Ollama URL",
     ollama_model: "Ollama 模型",
-    ollama_url_placeholder: "例如 http://127.0.0.1:11434",
-    ollama_model_placeholder: "例如 qwen2.5:7b-instruct",
+    ollama_url_placeholder: "例如 http://127.0.0.1:11434…",
+    ollama_model_placeholder: "例如 qwen2.5:7b-instruct…",
     ai_tag: "AI",
     language_auto: "跟随浏览器",
     language_zh: "中文",
@@ -123,7 +124,8 @@ const I18N = {
     panes_per_row_1: "1 个",
     panes_per_row_2: "2 个",
     panes_per_row_3: "3 个",
-    panes_per_row_4: "4 个"
+    panes_per_row_4: "4 个",
+    skip_to_input: "跳到输入框"
   },
   en: {
     input_bubble_aria: "Input and actions",
@@ -133,19 +135,20 @@ const I18N = {
     new_chat: "New Chat",
     selected_sites: "Selected Sites",
     prompt_label: "Prompt",
-    prompt_placeholder: "Message... @ targets AI. Enter sends.",
+    prompt_placeholder: "Message… @ targets AI. Enter sends.",
     send: "Send",
     close: "Close",
     settings_categories: "Settings categories",
     sites_tab: "Sites",
+    layout_tab: "Layout",
     appearance_tab: "Appearance",
     sites_subtitle: "Site selection and sorting",
     save: "Save",
     add_site: "Add Site",
     site_name: "Site Name",
     site_url: "Site URL",
-    site_name_placeholder: "Site name, e.g. Perplexity",
-    site_url_placeholder: "Site URL, e.g. https://www.perplexity.ai/",
+    site_name_placeholder: "Site name, e.g. Perplexity…",
+    site_url_placeholder: "Site URL, e.g. https://www.perplexity.ai/…",
     cancel: "Cancel",
     add: "Add",
     theme_mode: "Theme Mode",
@@ -155,8 +158,8 @@ const I18N = {
     history_summary_enable: "Use local Ollama to summarize history title",
     ollama_url: "Ollama URL",
     ollama_model: "Ollama model",
-    ollama_url_placeholder: "e.g. http://127.0.0.1:11434",
-    ollama_model_placeholder: "e.g. qwen2.5:7b-instruct",
+    ollama_url_placeholder: "e.g. http://127.0.0.1:11434…",
+    ollama_model_placeholder: "e.g. qwen2.5:7b-instruct…",
     ai_tag: "AI",
     language_auto: "Follow Browser",
     language_zh: "Chinese",
@@ -182,7 +185,8 @@ const I18N = {
     panes_per_row_1: "1",
     panes_per_row_2: "2",
     panes_per_row_3: "3",
-    panes_per_row_4: "4"
+    panes_per_row_4: "4",
+    skip_to_input: "Skip to input"
   }
 };
 let locale = "en";
@@ -590,7 +594,11 @@ async function saveSiteUrlState() {
 }
 
 function formatTime(ts) {
-  return new Date(ts).toLocaleString();
+  const date = new Date(ts);
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    dateStyle: "short",
+    timeStyle: "short"
+  }).format(date);
 }
 
 function buildHistoryPreview(text) {
