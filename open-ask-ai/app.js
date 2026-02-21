@@ -112,6 +112,7 @@ const I18N = {
     image_attachment: "图片附件",
     image_placeholder_history: "[图片]",
     new_chat_history: "[新会话]",
+    open_chat_tab: "新标签打开",
     focus_pane: "放大此站点",
     unfocus_pane: "退出放大"
   },
@@ -164,6 +165,7 @@ const I18N = {
     image_attachment: "Image attachment",
     image_placeholder_history: "[Image]",
     new_chat_history: "[New chat]",
+    open_chat_tab: "Open in new tab",
     focus_pane: "Expand this site",
     unfocus_pane: "Exit expanded view"
   }
@@ -344,6 +346,11 @@ function createPane(site) {
   pane.className = "pane";
   pane.dataset.siteId = site.id;
   pane.innerHTML = `
+    <button type="button" class="pane-open-btn" data-site-id="${escapeHtml(site.id)}" aria-label="${escapeHtml(t("open_chat_tab"))}" title="${escapeHtml(t("open_chat_tab"))}">
+      <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 13v7H4V4h7"/>
+      </svg>
+    </button>
     <button type="button" class="pane-focus-btn" data-site-id="${escapeHtml(site.id)}" aria-label="${escapeHtml(t("focus_pane"))}" title="${escapeHtml(t("focus_pane"))}">
       <svg class="icon pane-focus-expand" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/>
@@ -383,6 +390,11 @@ function applyFocusedPaneState() {
     if (collapseIcon) collapseIcon.classList.toggle("hidden", !isFocused);
     btn.setAttribute("title", isFocused ? t("unfocus_pane") : t("focus_pane"));
     btn.setAttribute("aria-label", isFocused ? t("unfocus_pane") : t("focus_pane"));
+    const openBtn = pane.querySelector(".pane-open-btn");
+    if (openBtn) {
+      openBtn.setAttribute("title", t("open_chat_tab"));
+      openBtn.setAttribute("aria-label", t("open_chat_tab"));
+    }
   });
 }
 
@@ -733,6 +745,13 @@ function applyQuoteTextToPrompt(rawText) {
   refreshMentionDropdown();
 }
 
+function keepPromptFocus() {
+  promptEl.focus();
+  window.setTimeout(() => promptEl.focus(), 80);
+  window.setTimeout(() => promptEl.focus(), 220);
+  window.setTimeout(() => promptEl.focus(), 420);
+}
+
 function bytesLabel(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "";
   if (bytes < 1024) return `${bytes}B`;
@@ -773,6 +792,7 @@ async function appendImagesFromFiles(files) {
   pendingImageAttachments = newImages;
   renderAttachmentChips();
   broadcastPendingImagesToTargets();
+  keepPromptFocus();
   return true;
 }
 
@@ -975,7 +995,7 @@ async function onSend() {
 
   const currentUrls = urlsForSelectedSites(targetSiteIds);
   const existing = await findLatestMatchingHistory(targetSiteIds, currentUrls);
-  if (!existing) {
+  if (!existing || images.length) {
     const historyPrompt = message || t("image_placeholder_history");
     const entry = await appendHistory(historyPrompt, targetSiteIds);
     pendingHistoryBySite = {};
@@ -992,7 +1012,7 @@ async function onSend() {
   mentionSiteIds = [];
   renderMentionChips();
   autoResizePrompt();
-  promptEl.focus();
+  keepPromptFocus();
 }
 
 function autoResizePrompt() {
@@ -1143,6 +1163,18 @@ function bindEvents() {
   });
 
   panesEl.addEventListener("click", (event) => {
+    const openBtn = event.target.closest(".pane-open-btn");
+    if (openBtn) {
+      const siteId = openBtn.getAttribute("data-site-id");
+      const site = siteId ? getSiteById(siteId) : null;
+      const url = siteId ? String(siteUrlState[siteId] || "") : "";
+      const targetUrl = isHttpUrl(url) ? url : (site?.url || "");
+      if (isHttpUrl(targetUrl)) {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
+      }
+      promptEl.focus();
+      return;
+    }
     const btn = event.target.closest(".pane-focus-btn");
     if (!btn) return;
     const dragMovedAt = Number(btn.dataset.dragMovedAt || "0");
@@ -1234,6 +1266,7 @@ function bindEvents() {
     const hasImage = Array.from(files).some((file) => String(file.type || "").startsWith("image/"));
     if (!hasImage) return;
     event.preventDefault();
+    keepPromptFocus();
     void appendImagesFromFiles(files);
   });
   promptEl.addEventListener("dragover", (event) => {
@@ -1247,6 +1280,7 @@ function bindEvents() {
     const files = transfer.files;
     const hasFiles = files && files.length;
     if (hasFiles) {
+      keepPromptFocus();
       void appendImagesFromFiles(files);
     }
 
@@ -1258,7 +1292,7 @@ function bindEvents() {
     }
 
     if (hasFiles || droppedText) {
-      promptEl.focus();
+      keepPromptFocus();
     }
   });
   promptEl.addEventListener("click", refreshMentionDropdown);

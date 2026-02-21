@@ -176,11 +176,13 @@ function setInputValue(el, text) {
 function clickSend(site, inputEl) {
   const btn = findFirst(site.sendSelectors);
   if (btn) {
+    const ariaDisabled = String(btn.getAttribute("aria-disabled") || "").toLowerCase() === "true";
+    if (btn.disabled || ariaDisabled) return false;
     btn.click();
-    return;
+    return true;
   }
 
-  if (!inputEl) return;
+  if (!inputEl) return false;
   ["keydown", "keypress", "keyup"].forEach((eventType) => {
     const event = new KeyboardEvent(eventType, {
       bubbles: true,
@@ -191,6 +193,17 @@ function clickSend(site, inputEl) {
     });
     inputEl.dispatchEvent(event);
   });
+  return true;
+}
+
+async function clickSendWithRetry(site, inputEl, options = {}) {
+  const attempts = Number(options.attempts) > 0 ? Number(options.attempts) : 1;
+  const delay = Number(options.delay) >= 0 ? Number(options.delay) : 200;
+  for (let i = 0; i < attempts; i += 1) {
+    if (clickSend(site, inputEl)) return true;
+    if (i < attempts - 1) await sleep(delay);
+  }
+  return false;
 }
 
 function dataUrlToBlob(dataUrl) {
@@ -464,13 +477,8 @@ function attachByMainWorld(images) {
   });
 }
 
-async function attachImagesGemini(inputEl, files, images) {
+async function attachImagesGemini(inputEl, files) {
   if (attachByFileInput(files, inputEl)) return true;
-
-  if (images?.length) {
-    const mainWorldOk = await attachByMainWorld(images);
-    if (mainWorldOk) return true;
-  }
 
   const dropTargets = [
     queryDeepFirst(['.ql-editor', '[role="textbox"]', '[contenteditable="true"]']),
@@ -500,7 +508,7 @@ async function attachImages(inputEl, images, siteId = "") {
   const files = toImageFiles(images);
   if (!files.length) return false;
   if (siteId === "gemini") {
-    return attachImagesGemini(inputEl, files, images);
+    return attachImagesGemini(inputEl, files);
   }
   if (attachByFileInput(files, inputEl)) return true;
   if (attachByDrop(inputEl, files)) return true;
@@ -523,7 +531,11 @@ async function sendPrompt(packet) {
     await attachImages(inputEl, images, site.id);
   }
 
-  setTimeout(() => clickSend(site, inputEl), images.length ? 220 : 80);
+  await sleep(images.length ? 220 : 80);
+  await clickSendWithRetry(site, inputEl, {
+    attempts: images.length ? 20 : 4,
+    delay: images.length ? 250 : 100
+  });
 }
 
 function newChat() {
