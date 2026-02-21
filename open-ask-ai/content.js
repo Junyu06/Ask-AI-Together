@@ -80,11 +80,7 @@ const GENERIC_SITE = {
 };
 
 function findFirst(selectors) {
-  for (const selector of selectors) {
-    const el = document.querySelector(selector);
-    if (el) return el;
-  }
-  return null;
+  return queryDeepFirst(selectors) || null;
 }
 
 function isVisible(el) {
@@ -96,15 +92,48 @@ function isVisible(el) {
 }
 
 function clickFirstVisible(selectors) {
-  for (const selector of selectors) {
-    const nodes = Array.from(document.querySelectorAll(selector));
-    const target = nodes.find(isVisible);
-    if (target) {
-      target.click();
-      return true;
+  const target = queryDeepFirstVisible(selectors);
+  if (!target) return false;
+  target.click();
+  return true;
+}
+
+function walkDeep(node, visitor) {
+  visitor(node);
+  const children = node.children ? Array.from(node.children) : [];
+  for (const child of children) {
+    walkDeep(child, visitor);
+    if (child.shadowRoot) {
+      walkDeep(child.shadowRoot, visitor);
     }
   }
-  return false;
+}
+
+function queryDeepAll(selectors, root = document) {
+  const results = [];
+  const seen = new Set();
+  walkDeep(root, (node) => {
+    if (!node.querySelectorAll) return;
+    for (const selector of selectors) {
+      const items = Array.from(node.querySelectorAll(selector));
+      for (const item of items) {
+        if (seen.has(item)) continue;
+        seen.add(item);
+        results.push(item);
+      }
+    }
+  });
+  return results;
+}
+
+function queryDeepFirst(selectors, root = document) {
+  const all = queryDeepAll(selectors, root);
+  return all.length ? all[0] : null;
+}
+
+function queryDeepFirstVisible(selectors, root = document) {
+  const all = queryDeepAll(selectors, root);
+  return all.find(isVisible) || null;
 }
 
 function clickByText() {
@@ -202,8 +231,26 @@ function buildDataTransfer(files) {
   }
 }
 
-function attachByFileInput(files) {
-  const inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter((el) => !el.disabled && isVisible(el));
+function attachByFileInput(files, hintEl = null) {
+  const inputs = queryDeepAll(['input[type="file"]']).filter((el) => !el.disabled);
+  inputs.sort((a, b) => {
+    const aAccept = String(a.getAttribute("accept") || "").toLowerCase();
+    const bAccept = String(b.getAttribute("accept") || "").toLowerCase();
+    const aImg = aAccept.includes("image") ? 10 : 0;
+    const bImg = bAccept.includes("image") ? 10 : 0;
+    let aNear = 0;
+    let bNear = 0;
+    if (hintEl && hintEl.getBoundingClientRect) {
+      const hr = hintEl.getBoundingClientRect();
+      const ar = a.getBoundingClientRect();
+      const br = b.getBoundingClientRect();
+      const ad = Math.abs(ar.top - hr.top) + Math.abs(ar.left - hr.left);
+      const bd = Math.abs(br.top - hr.top) + Math.abs(br.left - hr.left);
+      aNear = -Math.min(ad, 5000) / 500;
+      bNear = -Math.min(bd, 5000) / 500;
+    }
+    return (bImg + bNear) - (aImg + aNear);
+  });
   for (const input of inputs) {
     try {
       const dt = buildDataTransfer(files);
@@ -218,6 +265,30 @@ function attachByFileInput(files) {
     }
   }
   return false;
+}
+
+function attachByDrop(inputEl, files) {
+  if (!inputEl) return false;
+  const dt = buildDataTransfer(files);
+  if (!dt) return false;
+  try {
+    inputEl.focus();
+    ["dragenter", "dragover", "drop"].forEach((type) => {
+      let evt;
+      try {
+        evt = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+      } catch (_error) {
+        evt = new Event(type, { bubbles: true, cancelable: true });
+      }
+      if (!("dataTransfer" in evt)) {
+        Object.defineProperty(evt, "dataTransfer", { value: dt });
+      }
+      inputEl.dispatchEvent(evt);
+    });
+    return true;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function attachByPaste(inputEl, files) {
@@ -251,11 +322,189 @@ function attachByPaste(inputEl, files) {
   }
 }
 
-async function attachImages(inputEl, images) {
+function attachByPasteTargets(targets, files) {
+  for (const target of targets) {
+    if (attachByPaste(target, files)) return true;
+  }
+  return false;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function clickFirstVisibleSelector(selectors) {
+  const target = queryDeepFirstVisible(selectors);
+  if (!target || target.disabled) return false;
+  target.click();
+  return true;
+}
+
+function geminiMainWorldAttach() {
+  function signal(ok) {
+    document.dispatchEvent(new CustomEvent("__oa_attach_result", { detail: { ok: ok } }));
+  }
+  try {
+    var el = document.getElementById("__oa_attach_payload");
+    if (!el) { signal(false); return; }
+    var items = JSON.parse(el.value);
+    el.remove();
+
+    var files = items.map(function (item) {
+      var i = item.dataUrl.indexOf(",");
+      var b = atob(item.dataUrl.slice(i + 1));
+      var a = new Uint8Array(b.length);
+      for (var j = 0; j < b.length; j++) a[j] = b.charCodeAt(j);
+      return new File([a], item.name, { type: item.type });
+    });
+    if (!files.length) { signal(false); return; }
+
+    var dt = new DataTransfer();
+    files.forEach(function (f) { dt.items.add(f); });
+
+    var done = false;
+    var origClick = HTMLInputElement.prototype.click;
+    var origPicker = window.showOpenFilePicker;
+
+    function cleanup() {
+      HTMLInputElement.prototype.click = origClick;
+      if (origPicker) window.showOpenFilePicker = origPicker;
+      observer.disconnect();
+    }
+
+    function inject(input) {
+      if (done) return;
+      done = true;
+      cleanup();
+      input.files = dt.files;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      signal(true);
+    }
+
+    HTMLInputElement.prototype.click = function () {
+      if (this.type === "file" && !done) { inject(this); return; }
+      return origClick.call(this);
+    };
+
+    if (window.showOpenFilePicker) {
+      window.showOpenFilePicker = function () {
+        done = true; cleanup(); signal(true);
+        return Promise.resolve(files.map(function (f) {
+          return { kind: "file", name: f.name, getFile: function () { return Promise.resolve(f); } };
+        }));
+      };
+    }
+
+    var observer = new MutationObserver(function () {
+      if (done) return;
+      var inputs = document.querySelectorAll('input[type="file"]');
+      for (var k = 0; k < inputs.length; k++) {
+        if (!inputs[k].disabled) { inject(inputs[k]); return; }
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    var sels = [
+      'button[aria-label*="Upload" i]', 'button[aria-label*="Add file" i]',
+      'button[aria-label*="Add photo" i]', 'button[aria-label*="Add image" i]',
+      'button[aria-label*="Attach" i]', 'button[aria-label*="上传" i]',
+      'button[aria-label*="文件" i]', 'button[aria-label*="图片" i]',
+      'button[aria-label*="添加" i]', '[data-test-id*="upload"]',
+      '[data-testid*="upload"]', 'button[mattooltip*="Upload" i]',
+      'button[mattooltip*="photo" i]', '[data-tooltip*="Upload" i]',
+      'div[role="button"][aria-label*="Upload" i]',
+      'div[role="button"][aria-label*="file" i]'
+    ];
+    for (var s = 0; s < sels.length; s++) {
+      var btn = document.querySelector(sels[s]);
+      if (btn && btn.offsetWidth > 0) { btn.click(); break; }
+    }
+
+    setTimeout(function () {
+      if (!done) { done = true; cleanup(); signal(false); }
+    }, 6000);
+  } catch (e) { signal(false); }
+}
+
+function attachByMainWorld(images) {
+  return new Promise(function (resolve) {
+    var resolved = false;
+    var handler = function (event) {
+      if (resolved) return;
+      resolved = true;
+      document.removeEventListener("__oa_attach_result", handler);
+      resolve(!!event.detail?.ok);
+    };
+    document.addEventListener("__oa_attach_result", handler);
+
+    var dataEl = document.createElement("textarea");
+    dataEl.id = "__oa_attach_payload";
+    dataEl.style.display = "none";
+    dataEl.value = JSON.stringify(
+      images.map(function (item) {
+        return { dataUrl: String(item?.dataUrl || ""), name: String(item?.name || "image.png"), type: String(item?.type || "image/png") };
+      })
+    );
+    document.documentElement.appendChild(dataEl);
+
+    var script = document.createElement("script");
+    script.textContent = "(" + geminiMainWorldAttach.toString() + ")()";
+    document.documentElement.appendChild(script);
+    script.remove();
+
+    setTimeout(function () {
+      if (!resolved) {
+        resolved = true;
+        document.removeEventListener("__oa_attach_result", handler);
+        try { dataEl.remove(); } catch (_) { /* noop */ }
+        resolve(false);
+      }
+    }, 8000);
+  });
+}
+
+async function attachImagesGemini(inputEl, files, images) {
+  if (attachByFileInput(files, inputEl)) return true;
+
+  if (images?.length) {
+    const mainWorldOk = await attachByMainWorld(images);
+    if (mainWorldOk) return true;
+  }
+
+  const dropTargets = [
+    queryDeepFirst(['.ql-editor', '[role="textbox"]', '[contenteditable="true"]']),
+    inputEl,
+    document.body
+  ].filter(Boolean);
+  const seenDrop = new Set();
+  for (const target of dropTargets) {
+    if (seenDrop.has(target)) continue;
+    seenDrop.add(target);
+    if (attachByDrop(target, files)) return true;
+  }
+
+  inputEl.focus();
+  await sleep(80);
+  const pasteTargets = [inputEl, document.activeElement, document.body, document].filter(Boolean);
+  const seenPaste = new Set();
+  for (const target of pasteTargets) {
+    if (seenPaste.has(target)) continue;
+    seenPaste.add(target);
+    if (attachByPaste(target, files)) return true;
+  }
+  return false;
+}
+
+async function attachImages(inputEl, images, siteId = "") {
   const files = toImageFiles(images);
   if (!files.length) return false;
-  if (attachByFileInput(files)) return true;
-  return attachByPaste(inputEl, files);
+  if (siteId === "gemini") {
+    return attachImagesGemini(inputEl, files, images);
+  }
+  if (attachByFileInput(files, inputEl)) return true;
+  if (attachByDrop(inputEl, files)) return true;
+  return attachByPasteTargets([inputEl, document.activeElement, document.body].filter(Boolean), files);
 }
 
 async function sendPrompt(packet) {
@@ -271,7 +520,7 @@ async function sendPrompt(packet) {
   if (!hasText) inputEl.focus();
 
   if (images.length) {
-    await attachImages(inputEl, images);
+    await attachImages(inputEl, images, site.id);
   }
 
   setTimeout(() => clickSend(site, inputEl), images.length ? 220 : 80);
@@ -386,6 +635,12 @@ window.addEventListener("message", (event) => {
       message: data.message || "",
       images: data.payload?.images || []
     });
+  } else if (data.type === "ATTACH_IMAGES") {
+    const site = currentSite() || GENERIC_SITE;
+    const inputEl = findFirst(site.inputSelectors);
+    if (inputEl) {
+      void attachImages(inputEl, data.payload?.images || [], site.id);
+    }
   } else if (data.type === "NEW_CHAT") {
     newChat();
   }
@@ -396,8 +651,9 @@ document.addEventListener("touchend", showQuoteButton);
 document.addEventListener(
   "keydown",
   (event) => {
-    if (event.key !== "Escape") return;
-    window.parent.postMessage({ type: "PANE_ESCAPE" }, "*");
+    const isFocusShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f";
+    if (!isFocusShortcut) return;
+    window.parent.postMessage({ type: "PANE_EXIT_FOCUS" }, "*");
   },
   true
 );

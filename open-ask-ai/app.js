@@ -5,7 +5,10 @@ const STORAGE_KEYS = {
   siteOrder: "oa_site_order",
   themeMode: "oa_theme_mode",
   siteUrlState: "oa_site_url_state",
-  localeMode: "oa_locale_mode"
+  localeMode: "oa_locale_mode",
+  historySummaryEnabled: "oa_history_summary_enabled",
+  historySummaryUrl: "oa_history_summary_url",
+  historySummaryModel: "oa_history_summary_model"
 };
 
 const BUILTIN_SITES = [
@@ -35,6 +38,10 @@ let localeMode = "auto";
 let pendingImageAttachments = [];
 let focusedSiteId = null;
 let paneFocusButtonPosBySite = {};
+let pendingNewChatBySite = {};
+let historySummaryEnabled = false;
+let historySummaryUrl = "http://127.0.0.1:11434";
+let historySummaryModel = "qwen2.5:7b-instruct";
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -49,6 +56,10 @@ const settingsSidebarEl = document.querySelector(".settings-sidebar");
 const mentionDropdownEl = document.getElementById("mention-dropdown");
 const mentionChipsEl = document.getElementById("mention-chips");
 const attachmentChipsEl = document.getElementById("attachment-chips");
+const historySummaryEnabledEl = document.getElementById("history-summary-enabled");
+const historySummaryUrlEl = document.getElementById("history-summary-url");
+const historySummaryModelEl = document.getElementById("history-summary-model");
+const historySummaryConfigEl = document.getElementById("history-summary-config");
 
 const mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
 const I18N = {
@@ -77,6 +88,14 @@ const I18N = {
     add: "添加",
     theme_mode: "主题模式",
     language_mode: "语言",
+    history_settings_tab: "历史显示",
+    history_settings_subtitle: "历史标题显示策略",
+    history_summary_enable: "使用本地 Ollama 生成历史摘要",
+    ollama_url: "Ollama URL",
+    ollama_model: "Ollama 模型",
+    ollama_url_placeholder: "例如 http://127.0.0.1:11434",
+    ollama_model_placeholder: "例如 qwen2.5:7b-instruct",
+    ai_tag: "AI",
     language_auto: "跟随浏览器",
     language_zh: "中文",
     language_en: "English",
@@ -92,6 +111,7 @@ const I18N = {
     image_paste_only: "仅支持图片粘贴/拖入",
     image_attachment: "图片附件",
     image_placeholder_history: "[图片]",
+    new_chat_history: "[新会话]",
     focus_pane: "放大此站点",
     unfocus_pane: "退出放大"
   },
@@ -120,6 +140,14 @@ const I18N = {
     add: "Add",
     theme_mode: "Theme Mode",
     language_mode: "Language",
+    history_settings_tab: "History Display",
+    history_settings_subtitle: "History title strategy",
+    history_summary_enable: "Use local Ollama to summarize history title",
+    ollama_url: "Ollama URL",
+    ollama_model: "Ollama model",
+    ollama_url_placeholder: "e.g. http://127.0.0.1:11434",
+    ollama_model_placeholder: "e.g. qwen2.5:7b-instruct",
+    ai_tag: "AI",
     language_auto: "Follow Browser",
     language_zh: "Chinese",
     language_en: "English",
@@ -135,6 +163,7 @@ const I18N = {
     image_paste_only: "Images only for paste/drop",
     image_attachment: "Image attachment",
     image_placeholder_history: "[Image]",
+    new_chat_history: "[New chat]",
     focus_pane: "Expand this site",
     unfocus_pane: "Exit expanded view"
   }
@@ -193,9 +222,42 @@ async function setLocaleMode(mode) {
   renderSiteSettings();
   renderMentionChips();
   renderAttachmentChips();
+  renderHistorySummarySettings();
   applyFocusedPaneState();
   await renderHistory();
   panelTitleEl.textContent = !rightPanelEl.classList.contains("hidden") ? t("settings_title") : t("history_title");
+}
+
+async function loadHistorySummaryConfig() {
+  const data = await chrome.storage.local.get([
+    STORAGE_KEYS.historySummaryEnabled,
+    STORAGE_KEYS.historySummaryUrl,
+    STORAGE_KEYS.historySummaryModel
+  ]);
+  historySummaryEnabled = !!data[STORAGE_KEYS.historySummaryEnabled];
+  const rawUrl = String(data[STORAGE_KEYS.historySummaryUrl] || "").trim();
+  const rawModel = String(data[STORAGE_KEYS.historySummaryModel] || "").trim();
+  if (rawUrl) historySummaryUrl = rawUrl;
+  if (rawModel) historySummaryModel = rawModel;
+}
+
+function renderHistorySummarySettings() {
+  if (historySummaryEnabledEl) historySummaryEnabledEl.checked = historySummaryEnabled;
+  if (historySummaryUrlEl) historySummaryUrlEl.value = historySummaryUrl;
+  if (historySummaryModelEl) historySummaryModelEl.value = historySummaryModel;
+  if (historySummaryConfigEl) historySummaryConfigEl.classList.toggle("hidden", !historySummaryEnabled);
+}
+
+async function saveHistorySummaryConfig() {
+  historySummaryEnabled = !!historySummaryEnabledEl?.checked;
+  historySummaryUrl = String(historySummaryUrlEl?.value || "").trim() || "http://127.0.0.1:11434";
+  historySummaryModel = String(historySummaryModelEl?.value || "").trim() || "qwen2.5:7b-instruct";
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.historySummaryEnabled]: historySummaryEnabled,
+    [STORAGE_KEYS.historySummaryUrl]: historySummaryUrl,
+    [STORAGE_KEYS.historySummaryModel]: historySummaryModel
+  });
+  renderHistorySummarySettings();
 }
 
 function escapeHtml(str) {
@@ -453,6 +515,42 @@ function formatTime(ts) {
   return new Date(ts).toLocaleString();
 }
 
+function buildHistoryPreview(text) {
+  const oneLine = String(text || "").replaceAll(/\s+/g, " ").trim();
+  if (!oneLine) return "";
+  if (oneLine.length <= 20) return oneLine;
+  return `${oneLine.slice(0, 20)}...`;
+}
+
+async function summarizeHistoryPrompt(text) {
+  const fallback = buildHistoryPreview(text);
+  if (!historySummaryEnabled || !historySummaryUrl || !historySummaryModel) return { text: fallback, ai: false };
+  const endpoint = `${historySummaryUrl.replace(/\/+$/, "")}/api/generate`;
+  const prompt = `Summarize this user prompt into ONE short title within 20 chars. Return title only.\n\n${String(text || "").slice(0, 1600)}`;
+  try {
+    const timeout = new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error("timeout")), 12000);
+    });
+    const request = fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: historySummaryModel,
+        prompt,
+        stream: false,
+        options: { temperature: 0.1, num_predict: 40 }
+      })
+    });
+    const response = await Promise.race([request, timeout]);
+    if (!response.ok) return { text: fallback, ai: false };
+    const data = await response.json();
+    const raw = String(data?.response || "").trim();
+    return { text: buildHistoryPreview(raw) || fallback, ai: true };
+  } catch (_error) {
+    return { text: fallback, ai: false };
+  }
+}
+
 function buildHistoryLinks(item) {
   const urls = item.urls && typeof item.urls === "object" ? item.urls : {};
   const links = Object.entries(urls)
@@ -480,6 +578,23 @@ function urlsForSelectedSites(siteIds = selectedSiteIds) {
     }
   });
   return result;
+}
+
+function sameUrlSnapshot(a, b, siteIds) {
+  return siteIds.every((siteId) => {
+    const av = String(a?.[siteId] || "");
+    const bv = String(b?.[siteId] || "");
+    return av === bv;
+  });
+}
+
+async function findLatestMatchingHistory(siteIds, urls) {
+  const history = await loadHistory();
+  for (const item of history) {
+    if (!item || !item.urls || typeof item.urls !== "object") continue;
+    if (sameUrlSnapshot(item.urls, urls, siteIds)) return item;
+  }
+  return null;
 }
 
 async function applyHistoryItem(item) {
@@ -515,16 +630,17 @@ async function renderHistory() {
     const box = document.createElement("li");
     box.className = "history-item";
     const prompt = escapeHtml(item.prompt || "");
+    const aiTag = item.aiSummary ? `<span class="history-ai-tag">(${escapeHtml(t("ai_tag"))})</span>` : "";
     const meta = `${formatTime(item.ts)} | ${escapeHtml((item.sites || []).join(", "))}`;
     box.innerHTML = `
-      <div class="prompt">${prompt}</div>
+      <div class="prompt">${prompt}${aiTag}</div>
       <div class="meta">${meta}</div>
       ${buildHistoryLinks(item)}
     `;
     box.addEventListener("click", (event) => {
       if (event.target.closest("a")) return;
       void applyHistoryItem(item);
-      promptEl.value = item.prompt || "";
+      promptEl.value = "";
       promptEl.focus();
       autoResizePrompt();
       closePanels();
@@ -536,9 +652,12 @@ async function renderHistory() {
 async function appendHistory(prompt, siteIds = selectedSiteIds) {
   const history = await loadHistory();
   const validSiteIds = Array.isArray(siteIds) ? siteIds.filter((id) => getSiteById(id)) : [];
+  const summary = await summarizeHistoryPrompt(prompt);
+  const displayPrompt = summary.text;
   const entry = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    prompt,
+    prompt: displayPrompt,
+    aiSummary: !!summary.ai,
     ts: Date.now(),
     sites: validSiteIds
       .map(getSiteById)
@@ -623,27 +742,7 @@ function bytesLabel(bytes) {
 
 function renderAttachmentChips() {
   attachmentChipsEl.innerHTML = "";
-  if (!pendingImageAttachments.length) {
-    attachmentChipsEl.classList.add("hidden");
-    return;
-  }
-
-  pendingImageAttachments.forEach((item) => {
-    const chip = document.createElement("div");
-    chip.className = "attachment-chip";
-    chip.innerHTML = `
-      <img class="thumb" src="${escapeHtml(item.dataUrl)}" alt="${escapeHtml(t("image_attachment"))}" />
-      <span class="label">${escapeHtml(item.name || t("image_attachment"))}${item.size ? ` (${bytesLabel(item.size)})` : ""}</span>
-      <button type="button" class="remove" aria-label="${escapeHtml(t("remove"))}" title="${escapeHtml(t("remove"))}">×</button>
-    `;
-    chip.querySelector(".remove").addEventListener("click", () => {
-      pendingImageAttachments = pendingImageAttachments.filter((x) => x.id !== item.id);
-      renderAttachmentChips();
-    });
-    attachmentChipsEl.appendChild(chip);
-  });
-
-  attachmentChipsEl.classList.remove("hidden");
+  attachmentChipsEl.classList.add("hidden");
 }
 
 function readFileAsDataUrl(file) {
@@ -659,9 +758,10 @@ async function appendImagesFromFiles(files) {
   const imageFiles = Array.from(files || []).filter((file) => file && String(file.type || "").startsWith("image/"));
   if (!imageFiles.length) return false;
 
+  const newImages = [];
   for (const file of imageFiles.slice(0, 6)) {
     const dataUrl = await readFileAsDataUrl(file);
-    pendingImageAttachments.push({
+    newImages.push({
       id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
       name: file.name || t("image_attachment"),
       type: file.type || "image/png",
@@ -670,9 +770,27 @@ async function appendImagesFromFiles(files) {
     });
   }
 
-  pendingImageAttachments = pendingImageAttachments.slice(0, 6);
+  pendingImageAttachments = newImages;
   renderAttachmentChips();
+  broadcastPendingImagesToTargets();
   return true;
+}
+
+function currentTargetSiteIds() {
+  return mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
+}
+
+function broadcastPendingImagesToTargets() {
+  if (!pendingImageAttachments.length) return;
+  const targetSiteIds = currentTargetSiteIds();
+  if (!targetSiteIds.length) return;
+  const images = pendingImageAttachments.map((item) => ({
+    name: item.name,
+    type: item.type,
+    size: item.size,
+    dataUrl: item.dataUrl
+  }));
+  sendToTargetFrames("ATTACH_IMAGES", "", targetSiteIds, { images });
 }
 
 function normalizeMentionKey(text) {
@@ -737,7 +855,11 @@ function insertMentionCandidate(index) {
   promptEl.selectionStart = nextCaret;
   promptEl.selectionEnd = nextCaret;
   if (mentionState.mode === "focus") {
-    enterPaneFocus(site.id);
+    if (focusedSiteId === site.id) {
+      exitPaneFocus();
+    } else {
+      enterPaneFocus(site.id);
+    }
   } else {
     if (mentionSiteIds.includes(site.id)) {
       mentionSiteIds = mentionSiteIds.filter((id) => id !== site.id);
@@ -844,19 +966,26 @@ async function onSend() {
   const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
   if (!targetSiteIds.length) return;
 
-  const payload = { images };
+  const payload = {};
   if (mentionSiteIds.length) {
     sendToTargetFrames("CHAT_MESSAGE", message, targetSiteIds, payload);
   } else {
     sendToFrames("CHAT_MESSAGE", message, payload);
   }
 
-  const historyPrompt = message || t("image_placeholder_history");
-  const entry = await appendHistory(historyPrompt, targetSiteIds);
-  pendingHistoryBySite = {};
-  targetSiteIds.forEach((siteId) => {
-    pendingHistoryBySite[siteId] = entry.id;
-  });
+  const currentUrls = urlsForSelectedSites(targetSiteIds);
+  const existing = await findLatestMatchingHistory(targetSiteIds, currentUrls);
+  if (!existing) {
+    const historyPrompt = message || t("image_placeholder_history");
+    const entry = await appendHistory(historyPrompt, targetSiteIds);
+    pendingHistoryBySite = {};
+    targetSiteIds.forEach((siteId) => {
+      pendingHistoryBySite[siteId] = entry.id;
+    });
+  } else {
+    pendingHistoryBySite = {};
+  }
+
   promptEl.value = "";
   pendingImageAttachments = [];
   renderAttachmentChips();
@@ -1006,10 +1135,9 @@ function bindEvents() {
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    if (mentionState) return;
+    const isFocusShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f";
+    if (!isFocusShortcut) return;
     if (!focusedSiteId) return;
-    if (event.target && event.target.closest(".right-panel")) return;
     event.preventDefault();
     exitPaneFocus();
   });
@@ -1031,6 +1159,14 @@ function bindEvents() {
 
   document.getElementById("send").addEventListener("click", onSend);
   document.getElementById("new-chat").addEventListener("click", () => {
+    const activeSiteIds = Array.from(document.querySelectorAll("iframe"))
+      .map((frame) => frame.dataset.siteId)
+      .filter((id) => !!id);
+    const snapshot = {};
+    activeSiteIds.forEach((siteId) => {
+      snapshot[siteId] = siteUrlState[siteId] || "";
+    });
+    pendingNewChatBySite = snapshot;
     sendToFrames("NEW_CHAT", "NEW_CHAT");
   });
 
@@ -1218,20 +1354,27 @@ function bindEvents() {
     });
   });
 
+  historySummaryEnabledEl?.addEventListener("change", () => {
+    void saveHistorySummaryConfig();
+  });
+  historySummaryUrlEl?.addEventListener("change", () => {
+    void saveHistorySummaryConfig();
+  });
+  historySummaryModelEl?.addEventListener("change", () => {
+    void saveHistorySummaryConfig();
+  });
+  document.getElementById("save-history-summary")?.addEventListener("click", () => {
+    void saveHistorySummaryConfig();
+  });
+
   mediaDark.addEventListener("change", () => {
     if (themeMode === "system") applyTheme();
   });
 
   window.addEventListener("message", (event) => {
     if (!event.data || !event.data.type) return;
-    if (event.data.type === "PANE_ESCAPE") {
-      if (mentionState) {
-        hideMentionDropdown();
-        return;
-      }
-      if (focusedSiteId) {
-        exitPaneFocus();
-      }
+    if (event.data.type === "PANE_EXIT_FOCUS") {
+      if (focusedSiteId) exitPaneFocus();
       return;
     }
     if (event.data.type === "QUOTE_TEXT") {
@@ -1248,6 +1391,17 @@ function bindEvents() {
       if (pendingEntryId) {
         delete pendingHistoryBySite[payload.siteId];
         void patchHistoryUrl(pendingEntryId, payload.siteId, payload.url);
+      } else if (Object.prototype.hasOwnProperty.call(pendingNewChatBySite, payload.siteId)) {
+        const prevUrl = String(pendingNewChatBySite[payload.siteId] || "");
+        delete pendingNewChatBySite[payload.siteId];
+        if (isHttpUrl(payload.url) && payload.url !== prevUrl) {
+          const onlySiteId = [payload.siteId];
+          const snapshot = { [payload.siteId]: payload.url };
+          void findLatestMatchingHistory(onlySiteId, snapshot).then((found) => {
+            if (found) return;
+            void appendHistory(t("new_chat_history"), onlySiteId);
+          });
+        }
       }
     }
   });
@@ -1313,12 +1467,14 @@ async function init() {
   await loadSiteUrlState();
   await loadThemeMode();
   await loadLocaleMode();
+  await loadHistorySummaryConfig();
   applyI18n();
   normalizeOrderAndSelection();
   await saveSiteOrder();
   saveSelectedSites();
   renderPanes();
   renderSiteSettings();
+  renderHistorySummarySettings();
   await renderHistory();
   applyTheme();
   autoResizePrompt();

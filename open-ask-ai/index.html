@@ -51,6 +51,7 @@
           <button class="sidebar-item active" data-settings-tab="sites" type="button" data-i18n="sites_tab">站点</button>
           <button class="sidebar-item" data-settings-tab="appearance" type="button" data-i18n="appearance_tab">外观</button>
           <button class="sidebar-item" data-settings-tab="language" type="button" data-i18n="language_mode">语言</button>
+          <button class="sidebar-item" data-settings-tab="history" type="button" data-i18n="history_settings_tab">历史显示</button>
         </nav>
         <section id="settings-content" class="settings-content">
           <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">
@@ -105,6 +106,25 @@
                 <input type="radio" name="locale-mode" value="en" />
                 <span data-i18n="language_en">English</span>
               </label>
+            </div>
+          </div>
+
+          <div id="settings-tab-history" class="settings-tab" data-tab="history">
+            <p class="floating-window-subtitle" data-i18n="history_settings_subtitle">历史标题显示策略</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input id="history-summary-enabled" type="checkbox" />
+                <span data-i18n="history_summary_enable">使用本地 Ollama 生成历史摘要</span>
+              </label>
+            </div>
+            <div id="history-summary-config" class="custom-site-form">
+              <label for="history-summary-url" class="visually-hidden" data-i18n="ollama_url">Ollama URL</label>
+              <input id="history-summary-url" type="url" placeholder="http://127.0.0.1:11434" aria-label="Ollama URL" data-i18n-placeholder="ollama_url_placeholder" data-i18n-aria-label="ollama_url" />
+              <label for="history-summary-model" class="visually-hidden" data-i18n="ollama_model">Ollama Model</label>
+              <input id="history-summary-model" type="text" placeholder="qwen2.5:7b-instruct" aria-label="Ollama Model" data-i18n-placeholder="ollama_model_placeholder" data-i18n-aria-label="ollama_model" />
+              <div class="custom-site-actions">
+                <button id="save-history-summary" class="btn btn-primary" type="button" data-i18n="save">保存</button>
+              </div>
             </div>
           </div>
         </section>
