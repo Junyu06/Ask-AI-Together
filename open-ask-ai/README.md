@@ -1,32 +1,23 @@
 # Open Ask AI (MV3)
 
-`open-ask-ai` 是一个独立的开源 Chrome 扩展，核心目标是把「同一个问题」快速分发到多个 AI 站点进行并行对比。
+`open-ask-ai` 是一个开源 Chrome 扩展：把同一条输入并行发送到多个 AI 官方站点，便于横向对比。
 
-它主要在做这些事：
+## 当前能力
 
-- 多 AI 分屏：同页并排打开多个 AI 官方网站
-- 一次输入多处发送：输入一次，广播到所有已选站点
-- 新聊天同步触发：可一键让各站点新建对话
-- 历史记录中心：本地保存提问，支持按历史中的站点 URL 一键回到当时页面
-- 统一控制台：在扩展页管理站点启用、排序、自定义站点
-- 外观与主题：支持黑/白/跟随系统，极简黑白 UI
-- 可拖动输入栏：输入区支持更大范围拖动，方便在分屏场景中避让
+- 多 AI 分屏（iframe 并排）
+- 一次输入并行发送
+- `@` 指定发送目标站点，`#` 快速聚焦站点
+- 新聊天同步触发（`NEW_CHAT` 广播）
+- 图片粘贴/拖拽预加载（发送时不二次附图）
+- 本地历史中心（可回到当时会话 URL）
+- Pane 顶部按钮：
+  - 放大/退出放大
+  - 新标签打开当前会话
+- 引用选中文本回填输入框
+- 主题（system/light/dark）与语言（auto/zh/en）
+- 可选本地 Ollama 历史标题摘要
 
-设计原则：
-
-- 不控制站点上的 `thinking/deep search/web search` 开关
-- 这些开关由用户在各 AI 官方网页自行点击
-- 扩展仅做消息分发与历史记录
-
-## 快速开始
-
-1. 打开 Chrome: `chrome://extensions/`
-2. 开启「开发者模式」
-3. 点击「加载已解压的扩展程序」
-4. 选择目录：`open-ask-ai`
-5. 点击扩展图标打开分屏页
-
-## 当前支持站点（可扩展）
+## 当前支持站点
 
 - ChatGPT
 - DeepSeek
@@ -35,23 +26,29 @@
 - Doubao
 - Yuanbao
 - Grok
+- Claude
 - Gemini
+
+## 快速开始
+
+1. 打开 Chrome：`chrome://extensions/`
+2. 开启开发者模式
+3. 选择“加载已解压的扩展程序”
+4. 选择目录：`open-ask-ai`
+5. 点击扩展图标打开主页面
 
 ## 文件结构
 
-- `manifest.json`: MV3 配置
-- `background.js`: 打开主页面 + iframe 兼容规则
-- `index.html`: 主界面
-- `styles.css`: 界面样式（极简黑白主题、面板、输入栏）
-- `app.js`: 分屏、发送、历史记录、设置、主题、拖拽
-- `content.js`: 注入脚本（填充输入框/发送/新建对话）
+- `manifest.json`：MV3 配置
+- `background.js`：打开主页面 + 动态响应头规则
+- `index.html`：主界面结构
+- `styles.css`：样式
+- `app.js`：主页面编排逻辑（分屏/发送/历史/设置）
+- `content.js`：站点注入执行器（输入/发送/附图/新聊天）
 
-## 扩展点
+## 扩展站点
 
-新增站点只需改 `app.js` 和 `content.js` 里的 `SITES` 配置：
+新增站点需同步两处：
 
-- `url`
-- `matchHosts`
-- `inputSelectors`
-- `sendSelectors`
-- `newChatSelectors`
+1. `app.js` 的 `BUILTIN_SITES`（名称与 URL）
+2. `content.js` 的 `SITES`（`matchHosts/inputSelectors/sendSelectors/newChatSelectors`）
