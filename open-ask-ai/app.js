@@ -8,7 +8,8 @@ const STORAGE_KEYS = {
   localeMode: "oa_locale_mode",
   historySummaryEnabled: "oa_history_summary_enabled",
   historySummaryUrl: "oa_history_summary_url",
-  historySummaryModel: "oa_history_summary_model"
+  historySummaryModel: "oa_history_summary_model",
+  panesPerRow: "oa_panes_per_row"
 };
 
 const BUILTIN_SITES = [
@@ -43,6 +44,7 @@ let pendingNewChatBySite = {};
 let historySummaryEnabled = false;
 let historySummaryUrl = "http://127.0.0.1:11434";
 let historySummaryModel = "qwen2.5:7b-instruct";
+let panesPerRow = 0;
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -115,7 +117,13 @@ const I18N = {
     new_chat_history: "[新会话]",
     open_chat_tab: "新标签打开",
     focus_pane: "放大此站点",
-    unfocus_pane: "退出放大"
+    unfocus_pane: "退出放大",
+    panes_per_row: "每排站点数",
+    panes_per_row_all: "全部并排",
+    panes_per_row_1: "1 个",
+    panes_per_row_2: "2 个",
+    panes_per_row_3: "3 个",
+    panes_per_row_4: "4 个"
   },
   en: {
     input_bubble_aria: "Input and actions",
@@ -168,7 +176,13 @@ const I18N = {
     new_chat_history: "[New chat]",
     open_chat_tab: "Open in new tab",
     focus_pane: "Expand this site",
-    unfocus_pane: "Exit expanded view"
+    unfocus_pane: "Exit expanded view",
+    panes_per_row: "Panes per row",
+    panes_per_row_all: "All in one row",
+    panes_per_row_1: "1",
+    panes_per_row_2: "2",
+    panes_per_row_3: "3",
+    panes_per_row_4: "4"
   }
 };
 let locale = "en";
@@ -244,6 +258,18 @@ async function loadHistorySummaryConfig() {
   if (rawModel) historySummaryModel = rawModel;
 }
 
+async function loadPanesPerRow() {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.panesPerRow]);
+  const v = Number(data[STORAGE_KEYS.panesPerRow]);
+  panesPerRow = [0, 1, 2, 3, 4].includes(v) ? v : 0;
+}
+
+async function setPanesPerRow(n) {
+  panesPerRow = n;
+  await chrome.storage.local.set({ [STORAGE_KEYS.panesPerRow]: n });
+  renderPanes();
+}
+
 function renderHistorySummarySettings() {
   if (historySummaryEnabledEl) historySummaryEnabledEl.checked = historySummaryEnabled;
   if (historySummaryUrlEl) historySummaryUrlEl.value = historySummaryUrl;
@@ -305,6 +331,9 @@ function renderPanes() {
   const selectedSet = new Set(selectedSiteIds);
   const sites = orderedSites().filter((site) => selectedSet.has(site.id));
 
+  panesEl.classList.remove("panes-per-row-0", "panes-per-row-1", "panes-per-row-2", "panes-per-row-3", "panes-per-row-4");
+  panesEl.classList.add(`panes-per-row-${panesPerRow}`);
+
   if (!sites.length) {
     exitPaneFocus();
     panesEl.innerHTML = "";
@@ -315,26 +344,60 @@ function renderPanes() {
     paneRatios = Array.from({ length: sites.length }, () => 1 / sites.length);
   }
 
-  const existingPaneMap = new Map(
-    Array.from(panesEl.querySelectorAll(".pane")).map((pane) => [pane.dataset.siteId, pane])
-  );
-  const frag = document.createDocumentFragment();
+  const existingPanes = Array.from(panesEl.querySelectorAll(".pane"));
+  const existingBySite = new Map(existingPanes.map((p) => [p.dataset.siteId, p]));
+  const targetSiteIds = sites.map((s) => s.id);
+  const existingSiteIds = new Set(existingBySite.keys());
+  const toRemove = existingSiteIds.size ? Array.from(existingSiteIds).filter((id) => !targetSiteIds.includes(id)) : [];
 
-  sites.forEach((site, index) => {
-    const pane = existingPaneMap.get(site.id) || createPane(site);
-    pane.dataset.index = String(index);
-    pane.style.width = `${paneRatios[index] * 100}%`;
-    frag.appendChild(pane);
-
-    if (index < sites.length - 1) {
-      const resizer = document.createElement("div");
-      resizer.className = "pane-resizer";
-      resizer.dataset.index = String(index);
-      frag.appendChild(resizer);
-    }
+  toRemove.forEach((siteId) => {
+    const pane = existingBySite.get(siteId);
+    if (pane && pane.parentNode) pane.remove();
+    existingBySite.delete(siteId);
   });
 
+  const N = panesPerRow <= 0 ? 0 : Math.min(panesPerRow, 4);
+  const frag = document.createDocumentFragment();
+
+  if (N === 0) {
+    sites.forEach((site, index) => {
+      let pane = existingBySite.get(site.id);
+      if (!pane) pane = createPane(site);
+      pane.dataset.index = String(index);
+      pane.style.width = `${paneRatios[index] * 100}%`;
+      frag.appendChild(pane);
+      if (index < sites.length - 1) {
+        const resizer = document.createElement("div");
+        resizer.className = "pane-resizer";
+        resizer.dataset.index = String(index);
+        frag.appendChild(resizer);
+      }
+    });
+  } else {
+    for (let r = 0; r < sites.length; r += N) {
+      const rowSites = sites.slice(r, r + N);
+      const rowEl = document.createElement("div");
+      rowEl.className = "pane-row";
+      rowSites.forEach((site, i) => {
+        const index = r + i;
+        let pane = existingBySite.get(site.id);
+        if (!pane) pane = createPane(site);
+        pane.dataset.index = String(index);
+        pane.style.width = "";
+        rowEl.appendChild(pane);
+        if (i < rowSites.length - 1) {
+          const resizer = document.createElement("div");
+          resizer.className = "pane-resizer";
+          resizer.dataset.index = String(index);
+          rowEl.appendChild(resizer);
+        }
+      });
+      frag.appendChild(rowEl);
+    }
+  }
+
   panesEl.replaceChildren(frag);
+
   if (focusedSiteId && !sites.some((site) => site.id === focusedSiteId)) {
     focusedSiteId = null;
   }
@@ -347,27 +410,29 @@ function createPane(site) {
   pane.className = "pane";
   pane.dataset.siteId = site.id;
   pane.innerHTML = `
-    <button type="button" class="pane-open-btn" data-site-id="${escapeHtml(site.id)}" aria-label="${escapeHtml(t("open_chat_tab"))}" title="${escapeHtml(t("open_chat_tab"))}">
-      <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 13v7H4V4h7"/>
-      </svg>
-    </button>
-    <button type="button" class="pane-focus-btn" data-site-id="${escapeHtml(site.id)}" aria-label="${escapeHtml(t("focus_pane"))}" title="${escapeHtml(t("focus_pane"))}">
-      <svg class="icon pane-focus-expand" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/>
-      </svg>
-      <svg class="icon pane-focus-collapse hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M9 9H4V4M15 9h5V4M9 15H4v5M15 15h5v5"/>
-      </svg>
-    </button>
+    <div class="pane-toolbar">
+      <button type="button" class="pane-open-btn" data-site-id="${escapeHtml(site.id)}" aria-label="${escapeHtml(t("open_chat_tab"))}" title="${escapeHtml(t("open_chat_tab"))}">
+        <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 13v7H4V4h7"/>
+        </svg>
+      </button>
+      <button type="button" class="pane-focus-btn" data-site-id="${escapeHtml(site.id)}" aria-label="${escapeHtml(t("focus_pane"))}" title="${escapeHtml(t("focus_pane"))}">
+        <svg class="icon pane-focus-expand" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/>
+        </svg>
+        <svg class="icon pane-focus-collapse hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 9H4V4M15 9h5V4M9 15H4v5M15 15h5v5"/>
+        </svg>
+      </button>
+    </div>
     <iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>
   `;
-  const btn = pane.querySelector(".pane-focus-btn");
+  const toolbar = pane.querySelector(".pane-toolbar");
   const savedPos = paneFocusButtonPosBySite[site.id];
-  if (btn && savedPos && Number.isFinite(savedPos.left) && Number.isFinite(savedPos.top)) {
-    btn.style.right = "auto";
-    btn.style.left = `${savedPos.left}px`;
-    btn.style.top = `${savedPos.top}px`;
+  if (toolbar && savedPos && Number.isFinite(savedPos.left) && Number.isFinite(savedPos.top)) {
+    toolbar.style.right = "auto";
+    toolbar.style.left = `${savedPos.left}px`;
+    toolbar.style.top = `${savedPos.top}px`;
   }
   return pane;
 }
@@ -1021,13 +1086,25 @@ function autoResizePrompt() {
   promptEl.style.height = `${Math.min(promptEl.scrollHeight, 200)}px`;
 }
 
+function runPanelOpenAnimation(panelEl) {
+  panelEl.classList.add("panel-open-initial");
+  panelBackdropEl.classList.add("panel-open-initial");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      panelEl.classList.remove("panel-open-initial");
+      panelBackdropEl.classList.remove("panel-open-initial");
+    });
+  });
+}
+
 function openSettingsPanel(tab = "sites") {
   exitPaneFocus();
   historyPanelEl.classList.add("hidden");
   rightPanelEl.classList.remove("hidden");
   panelTitleEl.textContent = t("settings_title");
   switchSettingsTab(tab);
-  syncBackdropVisibility();
+  panelBackdropEl.classList.remove("hidden");
+  runPanelOpenAnimation(rightPanelEl);
 }
 
 function openHistoryPanel() {
@@ -1035,13 +1112,24 @@ function openHistoryPanel() {
   rightPanelEl.classList.add("hidden");
   historyPanelEl.classList.remove("hidden");
   panelTitleEl.textContent = t("history_title");
-  syncBackdropVisibility();
+  panelBackdropEl.classList.remove("hidden");
+  runPanelOpenAnimation(historyPanelEl);
 }
 
 function closePanels() {
-  rightPanelEl.classList.add("hidden");
-  historyPanelEl.classList.add("hidden");
-  syncBackdropVisibility();
+  rightPanelEl.classList.add("panel-closing");
+  historyPanelEl.classList.add("panel-closing");
+  panelBackdropEl.classList.add("panel-closing");
+  const onClosed = () => {
+    panelBackdropEl.removeEventListener("transitionend", onClosed);
+    rightPanelEl.classList.add("hidden");
+    historyPanelEl.classList.add("hidden");
+    panelBackdropEl.classList.add("hidden");
+    rightPanelEl.classList.remove("panel-closing");
+    historyPanelEl.classList.remove("panel-closing");
+    panelBackdropEl.classList.remove("panel-closing");
+  };
+  panelBackdropEl.addEventListener("transitionend", onClosed);
 }
 
 function syncBackdropVisibility() {
@@ -1096,35 +1184,40 @@ function bindEvents() {
 
   window.addEventListener("mousemove", (event) => {
     if (!paneBtnDrag) return;
-    const { btn, pane, startX, startY, baseLeft, baseTop } = paneBtnDrag;
+    const { toolbar, pane, startX, startY, baseLeft, baseTop } = paneBtnDrag;
     const dx = event.clientX - startX;
     const dy = event.clientY - startY;
     if (!paneBtnDrag.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
       paneBtnDrag.moved = true;
-      btn.classList.add("dragging");
+      toolbar.classList.add("dragging");
+      const focusBtn = toolbar.querySelector(".pane-focus-btn");
+      if (focusBtn) focusBtn.classList.add("dragging");
     }
     if (!paneBtnDrag.moved) return;
 
-    const maxLeft = Math.max(0, pane.clientWidth - btn.offsetWidth);
-    const maxTop = Math.max(0, pane.clientHeight - btn.offsetHeight);
+    const maxLeft = Math.max(0, pane.clientWidth - toolbar.offsetWidth);
+    const maxTop = Math.max(0, pane.clientHeight - toolbar.offsetHeight);
     const nextLeft = Math.max(0, Math.min(maxLeft, baseLeft + dx));
     const nextTop = Math.max(0, Math.min(maxTop, baseTop + dy));
-    btn.style.right = "auto";
-    btn.style.left = `${nextLeft}px`;
-    btn.style.top = `${nextTop}px`;
+    toolbar.style.right = "auto";
+    toolbar.style.left = `${nextLeft}px`;
+    toolbar.style.top = `${nextTop}px`;
   });
 
   window.addEventListener("mouseup", () => {
     if (!paneBtnDrag) return;
-    const { btn, pane, moved } = paneBtnDrag;
+    const { toolbar, pane, moved } = paneBtnDrag;
     if (moved) {
-      btn.dataset.dragMovedAt = String(Date.now());
+      const focusBtn = toolbar.querySelector(".pane-focus-btn");
+      if (focusBtn) focusBtn.dataset.dragMovedAt = String(Date.now());
       paneFocusButtonPosBySite[pane.dataset.siteId] = {
-        left: Number.parseFloat(btn.style.left) || 10,
-        top: Number.parseFloat(btn.style.top) || 10
+        left: Number.parseFloat(toolbar.style.left) || 10,
+        top: Number.parseFloat(toolbar.style.top) || 10
       };
     }
-    btn.classList.remove("dragging");
+    toolbar.classList.remove("dragging");
+    const focusBtn = toolbar.querySelector(".pane-focus-btn");
+    if (focusBtn) focusBtn.classList.remove("dragging");
     paneBtnDrag = null;
     document.body.style.userSelect = "";
   });
@@ -1132,19 +1225,20 @@ function bindEvents() {
   panesEl.addEventListener("mousedown", (event) => {
     const btn = event.target.closest(".pane-focus-btn");
     if (!btn || event.button !== 0) return;
+    const toolbar = btn.closest(".pane-toolbar");
     const pane = btn.closest(".pane");
-    if (!pane) return;
+    if (!toolbar || !pane) return;
 
     const paneRect = pane.getBoundingClientRect();
-    const btnRect = btn.getBoundingClientRect();
-    const baseLeft = btn.style.left ? Number.parseFloat(btn.style.left) : btnRect.left - paneRect.left;
-    const baseTop = btn.style.top ? Number.parseFloat(btn.style.top) : btnRect.top - paneRect.top;
-    btn.style.right = "auto";
-    btn.style.left = `${baseLeft}px`;
-    btn.style.top = `${baseTop}px`;
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const baseLeft = toolbar.style.left ? Number.parseFloat(toolbar.style.left) : toolbarRect.left - paneRect.left;
+    const baseTop = toolbar.style.top ? Number.parseFloat(toolbar.style.top) : toolbarRect.top - paneRect.top;
+    toolbar.style.right = "auto";
+    toolbar.style.left = `${baseLeft}px`;
+    toolbar.style.top = `${baseTop}px`;
 
     paneBtnDrag = {
-      btn,
+      toolbar,
       pane,
       startX: event.clientX,
       startY: event.clientY,
@@ -1389,6 +1483,12 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll('input[name="panes-per-row"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      void setPanesPerRow(Number(radio.value));
+    });
+  });
+
   historySummaryEnabledEl?.addEventListener("change", () => {
     void saveHistorySummaryConfig();
   });
@@ -1503,6 +1603,7 @@ async function init() {
   await loadThemeMode();
   await loadLocaleMode();
   await loadHistorySummaryConfig();
+  await loadPanesPerRow();
   applyI18n();
   normalizeOrderAndSelection();
   await saveSiteOrder();
@@ -1514,7 +1615,13 @@ async function init() {
   applyTheme();
   autoResizePrompt();
   renderAttachmentChips();
+  syncPanesPerRowRadio();
   bindEvents();
+}
+
+function syncPanesPerRowRadio() {
+  const radio = document.querySelector(`input[name="panes-per-row"][value="${panesPerRow}"]`);
+  if (radio) radio.checked = true;
 }
 
 function initSiteDragSort() {
@@ -1578,54 +1685,68 @@ function initPaneResizers() {
   if (!resizers.length || panes.length < 2) return;
 
   resizers.forEach((resizer) => {
-    resizer.onmousedown = (event) => {
-      event.preventDefault();
+    const container = resizer.parentElement;
+    const leftPane = resizer.previousElementSibling;
+    const rightPane = resizer.nextElementSibling;
+    const useSiblings = leftPane?.classList?.contains("pane") && rightPane?.classList?.contains("pane");
+    const updateRatios = container === panesEl;
+    if (useSiblings) {
+      resizer.onmousedown = makeResizerHandler(leftPane, rightPane, container, panes, updateRatios);
+    } else {
       const leftIndex = Number(resizer.dataset.index);
-      const leftPane = panes[leftIndex];
-      const rightPane = panes[leftIndex + 1];
-      if (!leftPane || !rightPane) return;
+      const left = panes[leftIndex];
+      const right = panes[leftIndex + 1];
+      if (!left || !right) return;
+      resizer.onmousedown = makeResizerHandler(left, right, panesEl, panes, true);
+    }
+  });
+}
 
-      const containerRect = panesEl.getBoundingClientRect();
-      const leftStart = leftPane.getBoundingClientRect().width;
-      const rightStart = rightPane.getBoundingClientRect().width;
-      const startX = event.clientX;
-      const minWidth = 220;
+function makeResizerHandler(leftPane, rightPane, container, allPanes, updateRatios) {
+  return (event) => {
+    event.preventDefault();
+    const containerRect = container.getBoundingClientRect();
+    const leftStart = leftPane.getBoundingClientRect().width;
+    const rightStart = rightPane.getBoundingClientRect().width;
+    const startX = event.clientX;
+    const minWidth = 220;
 
-      const onMove = (moveEvent) => {
-        const delta = moveEvent.clientX - startX;
-        let nextLeft = leftStart + delta;
-        let nextRight = rightStart - delta;
-        if (nextLeft < minWidth) {
-          nextLeft = minWidth;
-          nextRight = leftStart + rightStart - nextLeft;
-        }
-        if (nextRight < minWidth) {
-          nextRight = minWidth;
-          nextLeft = leftStart + rightStart - nextRight;
-        }
-        leftPane.style.width = `${nextLeft}px`;
-        rightPane.style.width = `${nextRight}px`;
-      };
+    const onMove = (moveEvent) => {
+      const delta = moveEvent.clientX - startX;
+      let nextLeft = leftStart + delta;
+      let nextRight = rightStart - delta;
+      if (nextLeft < minWidth) {
+        nextLeft = minWidth;
+        nextRight = leftStart + rightStart - nextLeft;
+      }
+      if (nextRight < minWidth) {
+        nextRight = minWidth;
+        nextLeft = leftStart + rightStart - nextRight;
+      }
+      leftPane.style.width = `${nextLeft}px`;
+      rightPane.style.width = `${nextRight}px`;
+    };
 
-      const onUp = () => {
-        const widths = panes.map((pane) => pane.getBoundingClientRect().width);
-        const total = widths.reduce((sum, width) => sum + width, 0) || containerRect.width;
-        paneRatios = widths.map((width) => width / total);
-        panes.forEach((pane, idx) => {
+    const onUp = () => {
+      if (updateRatios && allPanes.length) {
+        const widths = allPanes.map((p) => p.getBoundingClientRect().width);
+        const total = widths.reduce((s, w) => s + w, 0) || containerRect.width;
+        paneRatios = widths.map((w) => w / total);
+        allPanes.forEach((pane, idx) => {
           pane.style.width = `${paneRatios[idx] * 100}%`;
         });
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-
-      document.body.style.cursor = "ew-resize";
-      document.body.style.userSelect = "none";
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
+      }
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
-  });
+
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 }
 
 void init();

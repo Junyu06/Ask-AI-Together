@@ -56,6 +56,31 @@
         <section id="settings-content" class="settings-content">
           <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">
             <p class="floating-window-subtitle" data-i18n="sites_subtitle">站点选择与排序</p>
+            <div class="panes-per-row-setting">
+              <span class="panes-per-row-label" data-i18n="panes_per_row">每排站点数</span>
+              <div class="theme-options panes-per-row-options">
+                <label class="theme-option">
+                  <input type="radio" name="panes-per-row" value="0" />
+                  <span data-i18n="panes_per_row_all">全部并排</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="panes-per-row" value="1" />
+                  <span data-i18n="panes_per_row_1">1 个</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="panes-per-row" value="2" />
+                  <span data-i18n="panes_per_row_2">2 个</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="panes-per-row" value="3" />
+                  <span data-i18n="panes_per_row_3">3 个</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="panes-per-row" value="4" />
+                  <span data-i18n="panes_per_row_4">4 个</span>
+                </label>
+              </div>
+            </div>
             <ul id="site-checkboxes" class="site-checkboxes"></ul>
             <div class="floating-window-foot">
               <button id="save-sites" class="btn btn-ghost" type="button" data-i18n="save">保存</button>
