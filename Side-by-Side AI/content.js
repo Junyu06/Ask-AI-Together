@@ -649,6 +649,32 @@ const showQuoteButton = debounce(() => {
   }
 }, 160);
 
+function isExtensionEmbeddedFrame() {
+  if (window.parent === window) return false;
+  let extensionOrigin = "";
+  try {
+    extensionOrigin = new URL(chrome.runtime.getURL("")).origin;
+  } catch (_error) {
+    return false;
+  }
+
+  const referrer = String(document.referrer || "");
+  if (referrer) {
+    try {
+      if (new URL(referrer).origin === extensionOrigin) return true;
+    } catch (_error) {
+      // Ignore invalid referrer URL.
+    }
+  }
+
+  try {
+    const ancestors = location.ancestorOrigins ? Array.from(location.ancestorOrigins) : [];
+    return ancestors.some((origin) => String(origin).replace(/\/$/, "") === extensionOrigin);
+  } catch (_error) {
+    return false;
+  }
+}
+
 window.addEventListener("message", (event) => {
   const data = event.data;
   if (!data || !data.type) return;
@@ -669,22 +695,24 @@ window.addEventListener("message", (event) => {
   }
 });
 
-document.addEventListener("mouseup", showQuoteButton);
-document.addEventListener("touchend", showQuoteButton);
-document.addEventListener(
-  "keydown",
-  (event) => {
-    const isFocusShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f";
-    if (!isFocusShortcut) return;
-    window.parent.postMessage({ type: "PANE_EXIT_FOCUS" }, "*");
-  },
-  true
-);
-document.addEventListener("click", (event) => {
-  if (event.target && event.target.closest(".oa-quote-float-btn")) return;
-  removeQuoteButton();
-});
-window.addEventListener("scroll", removeQuoteButton, true);
+if (isExtensionEmbeddedFrame()) {
+  document.addEventListener("mouseup", showQuoteButton);
+  document.addEventListener("touchend", showQuoteButton);
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      const isFocusShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f";
+      if (!isFocusShortcut) return;
+      window.parent.postMessage({ type: "PANE_EXIT_FOCUS" }, "*");
+    },
+    true
+  );
+  document.addEventListener("click", (event) => {
+    if (event.target && event.target.closest(".oa-quote-float-btn")) return;
+    removeQuoteButton();
+  });
+  window.addEventListener("scroll", removeQuoteButton, true);
+}
 
 let lastHref = location.href;
 function postUrlUpdate() {
@@ -701,9 +729,11 @@ function postUrlUpdate() {
   );
 }
 
-postUrlUpdate();
-setInterval(() => {
-  if (location.href === lastHref) return;
-  lastHref = location.href;
+if (isExtensionEmbeddedFrame()) {
   postUrlUpdate();
-}, 600);
+  setInterval(() => {
+    if (location.href === lastHref) return;
+    lastHref = location.href;
+    postUrlUpdate();
+  }, 600);
+}

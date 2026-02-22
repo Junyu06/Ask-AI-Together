@@ -68,8 +68,7 @@ body {
 .panes.panes-per-row-2 .pane-row,
 .panes.panes-per-row-3 .pane-row,
 .panes.panes-per-row-4 .pane-row {
-  flex: 0 0 auto;
-  height: 33.333vh;
+  flex: 1 1 0%;
 }
 
 .pane-row .pane {
@@ -82,17 +81,35 @@ body {
 }
 
 .pane {
-  background: #fff;
+  background: var(--surface);
   height: 100%;
   flex: 0 0 auto;
   overflow: hidden;
   position: relative;
 }
 
+.pane::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--surface);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-out;
+  z-index: 1;
+}
+
+.pane.is-loading::before {
+  opacity: 1;
+}
+
 .pane iframe {
   width: 100%;
   height: 100%;
   border: 0;
+  background: transparent;
+  position: relative;
+  z-index: 0;
 }
 
 .pane-toolbar {
@@ -159,6 +176,28 @@ body {
   cursor: ew-resize;
   position: relative;
   z-index: 30;
+}
+
+.pane-row-resizer {
+  height: 20px;
+  margin-top: -10px;
+  margin-bottom: -10px;
+  flex: 0 0 20px;
+  cursor: ns-resize;
+  position: relative;
+  z-index: 30;
+}
+
+.pane-row-resizer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 2px;
+  width: 100%;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .pane-resizer::before {

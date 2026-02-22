@@ -31,6 +31,7 @@ let siteUrlState = {};
 let customSites = [];
 let siteOrder = [];
 let paneRatios = [];
+let rowRatios = [];
 let themeMode = "system";
 let pendingHistoryBySite = {};
 let isComposing = false;
@@ -45,6 +46,8 @@ let historySummaryEnabled = false;
 let historySummaryUrl = "http://127.0.0.1:11434";
 let historySummaryModel = "qwen2.5:7b-instruct";
 let panesPerRow = 0;
+const HISTORY_URL_PATCH_WINDOW_MS = 25000;
+const paneCacheBySite = new Map();
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -474,50 +477,77 @@ function renderPanes() {
     return;
   }
 
-  if (paneRatios.length !== sites.length) {
+  const N = panesPerRow <= 0 ? 0 : Math.min(panesPerRow, 4);
+  if (N === 0 && paneRatios.length !== sites.length) {
     paneRatios = Array.from({ length: sites.length }, () => 1 / sites.length);
+  }
+  if (N > 0) {
+    const rows = Math.ceil(sites.length / N);
+    if (rowRatios.length !== rows) {
+      rowRatios = Array.from({ length: rows }, () => 1 / rows);
+    }
+  } else {
+    rowRatios = [];
   }
 
   const existingPanes = Array.from(panesEl.querySelectorAll(".pane"));
-  const existingBySite = new Map(existingPanes.map((p) => [p.dataset.siteId, p]));
-  const targetSiteIds = sites.map((s) => s.id);
-  const existingSiteIds = new Set(existingBySite.keys());
-  const toRemove = existingSiteIds.size ? Array.from(existingSiteIds).filter((id) => !targetSiteIds.includes(id)) : [];
-
-  toRemove.forEach((siteId) => {
-    const pane = existingBySite.get(siteId);
-    if (pane && pane.parentNode) pane.remove();
-    existingBySite.delete(siteId);
+  existingPanes.forEach((pane) => {
+    const siteId = pane.dataset.siteId;
+    if (siteId) paneCacheBySite.set(siteId, pane);
   });
 
-  const N = panesPerRow <= 0 ? 0 : Math.min(panesPerRow, 4);
-  const frag = document.createDocumentFragment();
+  // Keep panes attached to the live DOM tree to avoid iframe refreshes.
+  Array.from(panesEl.querySelectorAll(".pane-resizer, .pane-row-resizer")).forEach((el) => el.remove());
+  const rootRows = Array.from(panesEl.children).filter((el) => el.classList?.contains("pane-row"));
+  rootRows.forEach((row) => {
+    const rowPanes = Array.from(row.children).filter((el) => el.classList?.contains("pane"));
+    rowPanes.forEach((pane) => panesEl.appendChild(pane));
+    row.remove();
+  });
+  const targetSiteIds = new Set(sites.map((site) => site.id));
+  Array.from(panesEl.querySelectorAll(":scope > .pane")).forEach((pane) => {
+    if (!targetSiteIds.has(pane.dataset.siteId || "")) pane.remove();
+  });
 
   if (N === 0) {
     sites.forEach((site, index) => {
-      let pane = existingBySite.get(site.id);
-      if (!pane) pane = createPane(site);
+      let pane = paneCacheBySite.get(site.id);
+      if (!pane) {
+        pane = createPane(site);
+        paneCacheBySite.set(site.id, pane);
+      }
       pane.dataset.index = String(index);
+      pane.style.flex = "0 0 auto";
       pane.style.width = `${paneRatios[index] * 100}%`;
-      frag.appendChild(pane);
+      panesEl.appendChild(pane);
       if (index < sites.length - 1) {
         const resizer = document.createElement("div");
         resizer.className = "pane-resizer";
         resizer.dataset.index = String(index);
-        frag.appendChild(resizer);
+        panesEl.appendChild(resizer);
       }
     });
   } else {
+    const rows = Math.ceil(sites.length / N);
     for (let r = 0; r < sites.length; r += N) {
       const rowSites = sites.slice(r, r + N);
       const rowEl = document.createElement("div");
       rowEl.className = "pane-row";
+      const rowIndex = Math.floor(r / N);
+      const rowRatio = Number(rowRatios[rowIndex]) || 0;
+      rowEl.style.flex = "0 0 auto";
+      rowEl.style.height = `${((rowRatio > 0 ? rowRatio : 1 / rows) * 100).toFixed(6)}%`;
+      panesEl.appendChild(rowEl);
       rowSites.forEach((site, i) => {
         const index = r + i;
-        let pane = existingBySite.get(site.id);
-        if (!pane) pane = createPane(site);
+        let pane = paneCacheBySite.get(site.id);
+        if (!pane) {
+          pane = createPane(site);
+          paneCacheBySite.set(site.id, pane);
+        }
         pane.dataset.index = String(index);
-        pane.style.width = "";
+        pane.style.flex = "0 0 auto";
+        pane.style.width = `${(100 / rowSites.length).toFixed(6)}%`;
         rowEl.appendChild(pane);
         if (i < rowSites.length - 1) {
           const resizer = document.createElement("div");
@@ -526,11 +556,14 @@ function renderPanes() {
           rowEl.appendChild(resizer);
         }
       });
-      frag.appendChild(rowEl);
+      if (r + N < sites.length) {
+        const rowResizer = document.createElement("div");
+        rowResizer.className = "pane-row-resizer";
+        rowResizer.dataset.rowIndex = String(rowIndex);
+        panesEl.appendChild(rowResizer);
+      }
     }
   }
-
-  panesEl.replaceChildren(frag);
 
   if (focusedSiteId && !sites.some((site) => site.id === focusedSiteId)) {
     focusedSiteId = null;
@@ -541,7 +574,7 @@ function renderPanes() {
 
 function createPane(site) {
   const pane = document.createElement("div");
-  pane.className = "pane";
+  pane.className = "pane is-loading";
   pane.dataset.siteId = site.id;
   pane.innerHTML = `
     <div class="pane-toolbar">
@@ -561,6 +594,16 @@ function createPane(site) {
     </div>
     <iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>
   `;
+  const frame = pane.querySelector("iframe");
+  if (frame) {
+    frame.addEventListener("load", () => {
+      pane.classList.remove("is-loading");
+    });
+    // Avoid a stuck loading mask when a site blocks or delays load events.
+    window.setTimeout(() => {
+      pane.classList.remove("is-loading");
+    }, 12000);
+  }
   const toolbar = pane.querySelector(".pane-toolbar");
   const savedPos = paneFocusButtonPosBySite[site.id];
   if (toolbar && savedPos && Number.isFinite(savedPos.left) && Number.isFinite(savedPos.top)) {
@@ -818,6 +861,9 @@ async function applyHistoryItem(item) {
   const urls = item && item.urls && typeof item.urls === "object" ? item.urls : {};
   const candidateIds = Object.keys(urls).filter((siteId) => getSiteById(siteId) && isHttpUrl(urls[siteId]));
   if (candidateIds.length) {
+    candidateIds.forEach((siteId) => {
+      delete pendingHistoryBySite[siteId];
+    });
     const targetSet = new Set(candidateIds);
     selectedSiteIds = siteOrder.filter((id) => targetSet.has(id));
     if (!selectedSiteIds.length) {
@@ -832,7 +878,10 @@ async function applyHistoryItem(item) {
       const siteId = frame.dataset.siteId;
       const url = urls[siteId];
       if (!isHttpUrl(url)) return;
-      if (frame.src !== url) frame.src = url;
+      if (frame.src !== url) {
+        frame.closest(".pane")?.classList.add("is-loading");
+        frame.src = url;
+      }
       siteUrlState[siteId] = url;
     });
     await saveSiteUrlState();
@@ -1204,8 +1253,13 @@ async function onSend() {
     const historyPrompt = message || t("image_placeholder_history");
     const entry = await appendHistory(historyPrompt, targetSiteIds);
     pendingHistoryBySite = {};
+    const now = Date.now();
     targetSiteIds.forEach((siteId) => {
-      pendingHistoryBySite[siteId] = entry.id;
+      pendingHistoryBySite[siteId] = {
+        entryId: entry.id,
+        baselineUrl: String(currentUrls[siteId] || ""),
+        expireAt: now + HISTORY_URL_PATCH_WINDOW_MS
+      };
     });
   } else {
     pendingHistoryBySite = {};
@@ -1428,6 +1482,9 @@ function bindEvents() {
     const activeSiteIds = Array.from(document.querySelectorAll("iframe"))
       .map((frame) => frame.dataset.siteId)
       .filter((id) => !!id);
+    activeSiteIds.forEach((siteId) => {
+      delete pendingHistoryBySite[siteId];
+    });
     const snapshot = {};
     activeSiteIds.forEach((siteId) => {
       snapshot[siteId] = siteUrlState[siteId] || "";
@@ -1664,10 +1721,16 @@ function bindEvents() {
     if (payload.siteId && payload.url) {
       siteUrlState[payload.siteId] = payload.url;
       void saveSiteUrlState();
-      const pendingEntryId = pendingHistoryBySite[payload.siteId];
-      if (pendingEntryId) {
-        delete pendingHistoryBySite[payload.siteId];
-        void patchHistoryUrl(pendingEntryId, payload.siteId, payload.url);
+      const pendingPatch = pendingHistoryBySite[payload.siteId];
+      if (pendingPatch && typeof pendingPatch === "object") {
+        const expired = Number(pendingPatch.expireAt || 0) < Date.now();
+        const baseline = String(pendingPatch.baselineUrl || "");
+        if (expired) {
+          delete pendingHistoryBySite[payload.siteId];
+        } else if (isHttpUrl(payload.url) && payload.url !== baseline) {
+          delete pendingHistoryBySite[payload.siteId];
+          void patchHistoryUrl(String(pendingPatch.entryId || ""), payload.siteId, payload.url);
+        }
       } else if (Object.prototype.hasOwnProperty.call(pendingNewChatBySite, payload.siteId)) {
         const prevUrl = String(pendingNewChatBySite[payload.siteId] || "");
         delete pendingNewChatBySite[payload.siteId];
@@ -1824,23 +1887,30 @@ function initSiteDragSort() {
 function initPaneResizers() {
   const resizers = Array.from(panesEl.querySelectorAll(".pane-resizer"));
   const panes = Array.from(panesEl.querySelectorAll(".pane"));
-  if (!resizers.length || panes.length < 2) return;
+  if (resizers.length && panes.length >= 2) {
+    resizers.forEach((resizer) => {
+      const container = resizer.parentElement;
+      const leftPane = resizer.previousElementSibling;
+      const rightPane = resizer.nextElementSibling;
+      const useSiblings = leftPane?.classList?.contains("pane") && rightPane?.classList?.contains("pane");
+      const rowPanes = container ? Array.from(container.querySelectorAll(":scope > .pane")) : [];
+      const updateRatios = true;
+      if (useSiblings) {
+        resizer.onmousedown = makeResizerHandler(leftPane, rightPane, container, rowPanes.length ? rowPanes : panes, updateRatios);
+      } else {
+        const leftIndex = Number(resizer.dataset.index);
+        const left = panes[leftIndex];
+        const right = panes[leftIndex + 1];
+        if (!left || !right) return;
+        resizer.onmousedown = makeResizerHandler(left, right, panesEl, panes, true);
+      }
+    });
+  }
 
-  resizers.forEach((resizer) => {
-    const container = resizer.parentElement;
-    const leftPane = resizer.previousElementSibling;
-    const rightPane = resizer.nextElementSibling;
-    const useSiblings = leftPane?.classList?.contains("pane") && rightPane?.classList?.contains("pane");
-    const updateRatios = container === panesEl;
-    if (useSiblings) {
-      resizer.onmousedown = makeResizerHandler(leftPane, rightPane, container, panes, updateRatios);
-    } else {
-      const leftIndex = Number(resizer.dataset.index);
-      const left = panes[leftIndex];
-      const right = panes[leftIndex + 1];
-      if (!left || !right) return;
-      resizer.onmousedown = makeResizerHandler(left, right, panesEl, panes, true);
-    }
+  const rowResizers = Array.from(panesEl.querySelectorAll(".pane-row-resizer"));
+  if (!rowResizers.length) return;
+  rowResizers.forEach((resizer) => {
+    resizer.onmousedown = makeRowResizerHandler(resizer);
   });
 }
 
@@ -1873,9 +1943,12 @@ function makeResizerHandler(leftPane, rightPane, container, allPanes, updateRati
       if (updateRatios && allPanes.length) {
         const widths = allPanes.map((p) => p.getBoundingClientRect().width);
         const total = widths.reduce((s, w) => s + w, 0) || containerRect.width;
-        paneRatios = widths.map((w) => w / total);
+        const localRatios = widths.map((w) => w / total);
+        if (container === panesEl) {
+          paneRatios = localRatios;
+        }
         allPanes.forEach((pane, idx) => {
-          pane.style.width = `${paneRatios[idx] * 100}%`;
+          pane.style.width = `${localRatios[idx] * 100}%`;
         });
       }
       window.removeEventListener("mousemove", onMove);
@@ -1885,6 +1958,60 @@ function makeResizerHandler(leftPane, rightPane, container, allPanes, updateRati
     };
 
     document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+}
+
+function makeRowResizerHandler(resizer) {
+  return (event) => {
+    event.preventDefault();
+    const topRow = resizer.previousElementSibling;
+    const bottomRow = resizer.nextElementSibling;
+    if (!topRow || !bottomRow || !topRow.classList.contains("pane-row") || !bottomRow.classList.contains("pane-row")) return;
+
+    const startY = event.clientY;
+    const topStart = topRow.getBoundingClientRect().height;
+    const bottomStart = bottomRow.getBoundingClientRect().height;
+    const minHeight = 160;
+
+    const onMove = (moveEvent) => {
+      const delta = moveEvent.clientY - startY;
+      let nextTop = topStart + delta;
+      let nextBottom = bottomStart - delta;
+      if (nextTop < minHeight) {
+        nextTop = minHeight;
+        nextBottom = topStart + bottomStart - nextTop;
+      }
+      if (nextBottom < minHeight) {
+        nextBottom = minHeight;
+        nextTop = topStart + bottomStart - nextBottom;
+      }
+      topRow.style.flex = "0 0 auto";
+      bottomRow.style.flex = "0 0 auto";
+      topRow.style.height = `${nextTop}px`;
+      bottomRow.style.height = `${nextBottom}px`;
+    };
+
+    const onUp = () => {
+      const rows = Array.from(panesEl.querySelectorAll(".pane-row"));
+      if (rows.length) {
+        const heights = rows.map((row) => row.getBoundingClientRect().height);
+        const total = heights.reduce((sum, h) => sum + h, 0) || 1;
+        rowRatios = heights.map((h) => h / total);
+        rows.forEach((row, idx) => {
+          row.style.flex = "0 0 auto";
+          row.style.height = `${(rowRatios[idx] * 100).toFixed(6)}%`;
+        });
+      }
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "ns-resize";
     document.body.style.userSelect = "none";
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
