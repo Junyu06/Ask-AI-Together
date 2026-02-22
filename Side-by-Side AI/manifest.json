@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Open Ask AI Together",
+  "name": "Side-by-Side AI",
   "description": "Open-source multi-AI split screen with prompt broadcast and local history.",
   "version": "0.1.0",
   "permissions": [
@@ -14,7 +14,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open Ask AI Together"
+    "default_title": "Side-by-Side AI"
   },
   "content_scripts": [
     {
