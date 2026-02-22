@@ -37,7 +37,7 @@ let isComposing = false;
 let mentionState = null;
 let mentionSiteIds = [];
 let localeMode = "auto";
-let pendingImageAttachments = [];
+let pendingAttachments = [];
 let focusedSiteId = null;
 let paneFocusButtonPosBySite = {};
 let pendingNewChatBySite = {};
@@ -112,9 +112,9 @@ const I18N = {
     drag_sort: "拖拽排序",
     open_site: "打开站点",
     remove: "移除",
-    image_paste_only: "仅支持图片粘贴/拖入",
-    image_attachment: "图片附件",
-    image_placeholder_history: "[图片]",
+    image_paste_only: "支持文件粘贴/拖入",
+    image_attachment: "附件",
+    image_placeholder_history: "[附件]",
     new_chat_history: "[新会话]",
     open_chat_tab: "新标签打开",
     focus_pane: "放大此站点",
@@ -173,9 +173,9 @@ const I18N = {
     drag_sort: "Drag to sort",
     open_site: "Open site",
     remove: "Remove",
-    image_paste_only: "Images only for paste/drop",
-    image_attachment: "Image attachment",
-    image_placeholder_history: "[Image]",
+    image_paste_only: "Files can be pasted/dropped",
+    image_attachment: "Attachment",
+    image_placeholder_history: "[Attachment]",
     new_chat_history: "[New chat]",
     open_chat_tab: "Open in new tab",
     focus_pane: "Expand this site",
@@ -847,25 +847,25 @@ function readFileAsDataUrl(file) {
   });
 }
 
-async function appendImagesFromFiles(files) {
-  const imageFiles = Array.from(files || []).filter((file) => file && String(file.type || "").startsWith("image/"));
-  if (!imageFiles.length) return false;
+async function appendAttachmentsFromFiles(files) {
+  const allFiles = Array.from(files || []).filter((file) => file instanceof File);
+  if (!allFiles.length) return false;
 
-  const newImages = [];
-  for (const file of imageFiles.slice(0, 6)) {
+  const newAttachments = [];
+  for (const file of allFiles.slice(0, 6)) {
     const dataUrl = await readFileAsDataUrl(file);
-    newImages.push({
+    newAttachments.push({
       id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
       name: file.name || t("image_attachment"),
-      type: file.type || "image/png",
+      type: file.type || "application/octet-stream",
       size: Number(file.size) || 0,
       dataUrl
     });
   }
 
-  pendingImageAttachments = newImages;
+  pendingAttachments = newAttachments;
   renderAttachmentChips();
-  broadcastPendingImagesToTargets();
+  broadcastPendingAttachmentsToTargets();
   keepPromptFocus();
   return true;
 }
@@ -874,17 +874,17 @@ function currentTargetSiteIds() {
   return mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
 }
 
-function broadcastPendingImagesToTargets() {
-  if (!pendingImageAttachments.length) return;
+function broadcastPendingAttachmentsToTargets() {
+  if (!pendingAttachments.length) return;
   const targetSiteIds = currentTargetSiteIds();
   if (!targetSiteIds.length) return;
-  const images = pendingImageAttachments.map((item) => ({
+  const files = pendingAttachments.map((item) => ({
     name: item.name,
     type: item.type,
     size: item.size,
     dataUrl: item.dataUrl
   }));
-  sendToTargetFrames("ATTACH_IMAGES", "", targetSiteIds, { images });
+  sendToTargetFrames("ATTACH_FILES", "", targetSiteIds, { files });
 }
 
 function normalizeMentionKey(text) {
@@ -1049,13 +1049,13 @@ function refreshMentionDropdown() {
 
 async function onSend() {
   const message = promptEl.value.trim();
-  const images = pendingImageAttachments.map((item) => ({
+  const files = pendingAttachments.map((item) => ({
     name: item.name,
     type: item.type,
     size: item.size,
     dataUrl: item.dataUrl
   }));
-  if (!message && !images.length) return;
+  if (!message && !files.length) return;
 
   const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
   if (!targetSiteIds.length) return;
@@ -1069,7 +1069,7 @@ async function onSend() {
 
   const currentUrls = urlsForSelectedSites(targetSiteIds);
   const existing = await findLatestMatchingHistory(targetSiteIds, currentUrls);
-  if (!existing || images.length) {
+  if (!existing || files.length) {
     const historyPrompt = message || t("image_placeholder_history");
     const entry = await appendHistory(historyPrompt, targetSiteIds);
     pendingHistoryBySite = {};
@@ -1081,7 +1081,7 @@ async function onSend() {
   }
 
   promptEl.value = "";
-  pendingImageAttachments = [];
+  pendingAttachments = [];
   renderAttachmentChips();
   mentionSiteIds = [];
   renderMentionChips();
@@ -1366,11 +1366,9 @@ function bindEvents() {
   promptEl.addEventListener("paste", (event) => {
     const files = event.clipboardData?.files;
     if (!files || !files.length) return;
-    const hasImage = Array.from(files).some((file) => String(file.type || "").startsWith("image/"));
-    if (!hasImage) return;
     event.preventDefault();
     keepPromptFocus();
-    void appendImagesFromFiles(files);
+    void appendAttachmentsFromFiles(files);
   });
   promptEl.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -1384,7 +1382,7 @@ function bindEvents() {
     const hasFiles = files && files.length;
     if (hasFiles) {
       keepPromptFocus();
-      void appendImagesFromFiles(files);
+      void appendAttachmentsFromFiles(files);
     }
 
     const droppedText = transfer.getData("text/plain") || transfer.getData("text/uri-list") || "";

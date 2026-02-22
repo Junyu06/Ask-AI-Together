@@ -221,22 +221,21 @@ function dataUrlToBlob(dataUrl) {
   const body = dataUrl.slice(idx + 1);
   const mimeMatch = meta.match(/^data:([^;]+);base64$/i);
   if (!mimeMatch) return null;
-  const mimeType = mimeMatch[1] || "image/png";
+  const mimeType = mimeMatch[1] || "application/octet-stream";
   const bin = atob(body);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
   return new Blob([bytes], { type: mimeType });
 }
 
-function toImageFiles(images) {
-  return images
+function toFiles(items) {
+  return items
     .map((item, index) => {
-      const type = String(item?.type || "image/png");
-      if (!type.startsWith("image/")) return null;
+      const type = String(item?.type || "application/octet-stream");
       const blob = dataUrlToBlob(String(item?.dataUrl || ""));
       if (!blob) return null;
-      const ext = type.split("/")[1] || "png";
-      const name = String(item?.name || `image-${Date.now()}-${index}.${ext}`);
+      const ext = type.split("/")[1]?.split(";")[0] || "bin";
+      const name = String(item?.name || `file-${Date.now()}-${index}.${ext}`);
       return new File([blob], name, { type });
     })
     .filter(Boolean);
@@ -448,7 +447,7 @@ function geminiMainWorldAttach() {
   } catch (e) { signal(false); }
 }
 
-function attachByMainWorld(images) {
+function attachByMainWorld(items) {
   return new Promise(function (resolve) {
     var resolved = false;
     var handler = function (event) {
@@ -463,8 +462,12 @@ function attachByMainWorld(images) {
     dataEl.id = "__oa_attach_payload";
     dataEl.style.display = "none";
     dataEl.value = JSON.stringify(
-      images.map(function (item) {
-        return { dataUrl: String(item?.dataUrl || ""), name: String(item?.name || "image.png"), type: String(item?.type || "image/png") };
+      items.map(function (item) {
+        return {
+          dataUrl: String(item?.dataUrl || ""),
+          name: String(item?.name || "file.bin"),
+          type: String(item?.type || "application/octet-stream")
+        };
       })
     );
     document.documentElement.appendChild(dataEl);
@@ -485,7 +488,7 @@ function attachByMainWorld(images) {
   });
 }
 
-async function attachImagesGemini(inputEl, files) {
+async function attachFilesGemini(inputEl, files) {
   if (attachByFileInput(files, inputEl)) return true;
 
   const dropTargets = [
@@ -512,11 +515,11 @@ async function attachImagesGemini(inputEl, files) {
   return false;
 }
 
-async function attachImages(inputEl, images, siteId = "") {
-  const files = toImageFiles(images);
+async function attachFiles(inputEl, items, siteId = "") {
+  const files = toFiles(items);
   if (!files.length) return false;
   if (siteId === "gemini") {
-    return attachImagesGemini(inputEl, files);
+    return attachFilesGemini(inputEl, files);
   }
   if (attachByFileInput(files, inputEl)) return true;
   if (attachByDrop(inputEl, files)) return true;
@@ -526,7 +529,7 @@ async function attachImages(inputEl, images, siteId = "") {
 async function sendPrompt(packet) {
   const site = currentSite() || GENERIC_SITE;
   const message = typeof packet === "string" ? packet : String(packet?.message || "");
-  const images = Array.isArray(packet?.images) ? packet.images : [];
+  const files = Array.isArray(packet?.files) ? packet.files : Array.isArray(packet?.images) ? packet.images : [];
 
   const inputEl = findFirst(site.inputSelectors);
   if (!inputEl) return;
@@ -535,14 +538,14 @@ async function sendPrompt(packet) {
   if (hasText && !setInputValue(inputEl, message)) return;
   if (!hasText) inputEl.focus();
 
-  if (images.length) {
-    await attachImages(inputEl, images, site.id);
+  if (files.length) {
+    await attachFiles(inputEl, files, site.id);
   }
 
-  await sleep(images.length ? 220 : 80);
+  await sleep(files.length ? 220 : 80);
   await clickSendWithRetry(site, inputEl, {
-    attempts: images.length ? 20 : 4,
-    delay: images.length ? 250 : 100
+    attempts: files.length ? 20 : 4,
+    delay: files.length ? 250 : 100
   });
 }
 
@@ -653,13 +656,13 @@ window.addEventListener("message", (event) => {
   if (data.type === "CHAT_MESSAGE") {
     void sendPrompt({
       message: data.message || "",
-      images: data.payload?.images || []
+      files: data.payload?.files || data.payload?.images || []
     });
-  } else if (data.type === "ATTACH_IMAGES") {
+  } else if (data.type === "ATTACH_FILES" || data.type === "ATTACH_IMAGES") {
     const site = currentSite() || GENERIC_SITE;
     const inputEl = findFirst(site.inputSelectors);
     if (inputEl) {
-      void attachImages(inputEl, data.payload?.images || [], site.id);
+      void attachFiles(inputEl, data.payload?.files || data.payload?.images || [], site.id);
     }
   } else if (data.type === "NEW_CHAT") {
     newChat();
