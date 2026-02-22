@@ -63,6 +63,9 @@ const historySummaryEnabledEl = document.getElementById("history-summary-enabled
 const historySummaryUrlEl = document.getElementById("history-summary-url");
 const historySummaryModelEl = document.getElementById("history-summary-model");
 const historySummaryConfigEl = document.getElementById("history-summary-config");
+const testHistorySummaryBtnEl = document.getElementById("test-history-summary");
+const historySummaryTestResultEl = document.getElementById("history-summary-test-result");
+const usageShortcutExitKeyEl = document.getElementById("usage-shortcut-exit-key");
 
 const mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
 const I18N = {
@@ -74,14 +77,24 @@ const I18N = {
     new_chat: "新聊天",
     selected_sites: "已选择站点",
     prompt_label: "输入问题",
-    prompt_placeholder: "输入问题，支持 @ 选择指定 AI；回车发送（Shift+Enter 换行）",
+    prompt_placeholder_default: "输入问题，@ 单独 AI，# 放大 AI；回车发送（Shift+Enter 换行）",
+    prompt_placeholder_focus: "输入问题，{shortcut} 退出放大（Shift+Enter 换行）",
     send: "发送",
     close: "关闭",
     settings_categories: "设置类别",
     sites_tab: "站点",
     layout_tab: "布局",
     appearance_tab: "外观",
+    usage_tab: "使用说明",
     sites_subtitle: "站点选择与排序",
+    usage_subtitle: "快捷键与输入规则",
+    usage_shortcut_at: "@ 选择单独 AI 作为发送目标",
+    usage_shortcut_hash: "# 选择并放大单个 AI",
+    usage_shortcut_exit: "退出放大",
+    usage_shortcut_send: "Enter 发送消息",
+    usage_shortcut_newline: "Shift + Enter 换行",
+    usage_shortcut_mention_nav: "↑ / ↓ 切换 @/# 候选项，Enter 选中",
+    usage_shortcut_mention_pick: "数字 1-9 快速选中 @/# 候选项",
     save: "保存",
     add_site: "添加站点",
     site_name: "站点名称",
@@ -97,6 +110,13 @@ const I18N = {
     history_summary_enable: "使用本地 Ollama 生成历史摘要",
     ollama_url: "Ollama URL",
     ollama_model: "Ollama 模型",
+    test_connection: "测试连接",
+    testing: "测试中…",
+    test_connection_ok: "连接成功：{reply}",
+    test_connection_failed: "连接失败：{reason}",
+    test_connection_need_input: "请先填写 Ollama URL 和模型",
+    test_connection_http: "HTTP {status}",
+    test_connection_empty: "接口已连通，但没有返回内容",
     ollama_url_placeholder: "例如 http://127.0.0.1:11434…",
     ollama_model_placeholder: "例如 qwen2.5:7b-instruct…",
     ai_tag: "AI",
@@ -135,14 +155,24 @@ const I18N = {
     new_chat: "New Chat",
     selected_sites: "Selected Sites",
     prompt_label: "Prompt",
-    prompt_placeholder: "Message… @ targets AI. Enter sends.",
+    prompt_placeholder_default: "Message… @ targets one AI, # expands one AI. Enter sends (Shift+Enter newline).",
+    prompt_placeholder_focus: "Message… Press {shortcut} to exit expanded view (Shift+Enter newline).",
     send: "Send",
     close: "Close",
     settings_categories: "Settings categories",
     sites_tab: "Sites",
     layout_tab: "Layout",
     appearance_tab: "Appearance",
+    usage_tab: "Guide",
     sites_subtitle: "Site selection and sorting",
+    usage_subtitle: "Shortcuts and input rules",
+    usage_shortcut_at: "@ targets one AI for sending",
+    usage_shortcut_hash: "# picks and expands one AI pane",
+    usage_shortcut_exit: "Exit expanded view",
+    usage_shortcut_send: "Enter sends message",
+    usage_shortcut_newline: "Shift + Enter inserts new line",
+    usage_shortcut_mention_nav: "Up/Down switch @/# candidates, Enter confirms",
+    usage_shortcut_mention_pick: "Number 1-9 quickly picks @/# candidates",
     save: "Save",
     add_site: "Add Site",
     site_name: "Site Name",
@@ -158,6 +188,13 @@ const I18N = {
     history_summary_enable: "Use local Ollama to summarize history title",
     ollama_url: "Ollama URL",
     ollama_model: "Ollama model",
+    test_connection: "Test connection",
+    testing: "Testing…",
+    test_connection_ok: "Connection OK: {reply}",
+    test_connection_failed: "Connection failed: {reason}",
+    test_connection_need_input: "Please enter Ollama URL and model first",
+    test_connection_http: "HTTP {status}",
+    test_connection_empty: "Connected but response is empty",
     ollama_url_placeholder: "e.g. http://127.0.0.1:11434…",
     ollama_model_placeholder: "e.g. qwen2.5:7b-instruct…",
     ai_tag: "AI",
@@ -195,6 +232,45 @@ function t(key) {
   return I18N[locale]?.[key] || I18N.en[key] || key;
 }
 
+function formatText(template, vars = {}) {
+  return String(template).replace(/\{(\w+)\}/g, (all, key) => (key in vars ? String(vars[key]) : all));
+}
+
+function isApplePlatform() {
+  const platform = String(navigator.userAgentData?.platform || navigator.platform || "");
+  if (/mac|iphone|ipad|ipod/i.test(platform)) return true;
+  const ua = String(navigator.userAgent || "");
+  return /macintosh|iphone|ipad|ipod/i.test(ua);
+}
+
+function getFocusExitShortcutLabel() {
+  return isApplePlatform() ? "Shift + Cmd + F" : "Shift + Ctrl + F";
+}
+
+function getFocusExitShortcutHtml() {
+  if (isApplePlatform()) return "<kbd>Shift</kbd> + <kbd>Cmd</kbd> + <kbd>F</kbd>";
+  return "<kbd>Shift</kbd> + <kbd>Ctrl</kbd> + <kbd>F</kbd>";
+}
+
+function updatePromptPlaceholder() {
+  const key = focusedSiteId ? "prompt_placeholder_focus" : "prompt_placeholder_default";
+  promptEl.setAttribute("placeholder", formatText(t(key), { shortcut: getFocusExitShortcutLabel() }));
+}
+
+function renderUsageGuide() {
+  if (usageShortcutExitKeyEl) {
+    usageShortcutExitKeyEl.innerHTML = getFocusExitShortcutHtml();
+  }
+}
+
+function setHistorySummaryTestResult(message = "", state = "") {
+  if (!historySummaryTestResultEl) return;
+  historySummaryTestResultEl.textContent = message;
+  historySummaryTestResultEl.classList.toggle("hidden", !message);
+  historySummaryTestResultEl.classList.remove("is-success", "is-error", "is-loading");
+  if (state) historySummaryTestResultEl.classList.add(`is-${state}`);
+}
+
 function detectLocale() {
   if (localeMode === "zh" || localeMode === "en") return localeMode;
   const lang = String(navigator.language || "").toLowerCase();
@@ -225,6 +301,8 @@ function applyI18n() {
     if (!key) return;
     el.setAttribute("title", t(key));
   });
+  updatePromptPlaceholder();
+  renderUsageGuide();
 
   const localeRadio = document.querySelector(`input[name="locale-mode"][value="${localeMode}"]`);
   if (localeRadio) localeRadio.checked = true;
@@ -279,6 +357,7 @@ function renderHistorySummarySettings() {
   if (historySummaryUrlEl) historySummaryUrlEl.value = historySummaryUrl;
   if (historySummaryModelEl) historySummaryModelEl.value = historySummaryModel;
   if (historySummaryConfigEl) historySummaryConfigEl.classList.toggle("hidden", !historySummaryEnabled);
+  if (!historySummaryEnabled) setHistorySummaryTestResult("");
 }
 
 async function saveHistorySummaryConfig() {
@@ -291,6 +370,55 @@ async function saveHistorySummaryConfig() {
     [STORAGE_KEYS.historySummaryModel]: historySummaryModel
   });
   renderHistorySummarySettings();
+}
+
+async function testHistorySummaryConfig() {
+  const rawUrl = String(historySummaryUrlEl?.value || "").trim();
+  const rawModel = String(historySummaryModelEl?.value || "").trim();
+  if (!rawUrl || !rawModel) {
+    setHistorySummaryTestResult(t("test_connection_need_input"), "error");
+    return;
+  }
+
+  const endpoint = `${rawUrl.replace(/\/+$/, "")}/api/generate`;
+  const testPrompt = "Reply with one short word only.";
+
+  setHistorySummaryTestResult(t("testing"), "loading");
+  if (testHistorySummaryBtnEl) testHistorySummaryBtnEl.disabled = true;
+
+  try {
+    const timeout = new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error("timeout")), 10000);
+    });
+    const request = fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: rawModel,
+        prompt: testPrompt,
+        stream: false,
+        options: { temperature: 0, num_predict: 24 }
+      })
+    });
+    const response = await Promise.race([request, timeout]);
+    if (!response.ok) {
+      setHistorySummaryTestResult(formatText(t("test_connection_failed"), { reason: formatText(t("test_connection_http"), { status: response.status }) }), "error");
+      return;
+    }
+    const data = await response.json();
+    const reply = String(data?.response || "").trim();
+    if (!reply) {
+      setHistorySummaryTestResult(t("test_connection_empty"), "error");
+      return;
+    }
+    const preview = reply.replaceAll(/\s+/g, " ").slice(0, 80);
+    setHistorySummaryTestResult(formatText(t("test_connection_ok"), { reply: preview }), "success");
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown error";
+    setHistorySummaryTestResult(formatText(t("test_connection_failed"), { reason }), "error");
+  } finally {
+    if (testHistorySummaryBtnEl) testHistorySummaryBtnEl.disabled = false;
+  }
 }
 
 function escapeHtml(str) {
@@ -466,6 +594,7 @@ function applyFocusedPaneState() {
       openBtn.setAttribute("aria-label", t("open_chat_tab"));
     }
   });
+  updatePromptPlaceholder();
 }
 
 function enterPaneFocus(siteId) {
@@ -1504,8 +1633,13 @@ function bindEvents() {
   historySummaryModelEl?.addEventListener("change", () => {
     void saveHistorySummaryConfig();
   });
+  historySummaryUrlEl?.addEventListener("input", () => setHistorySummaryTestResult(""));
+  historySummaryModelEl?.addEventListener("input", () => setHistorySummaryTestResult(""));
   document.getElementById("save-history-summary")?.addEventListener("click", () => {
     void saveHistorySummaryConfig();
+  });
+  testHistorySummaryBtnEl?.addEventListener("click", () => {
+    void testHistorySummaryConfig();
   });
 
   mediaDark.addEventListener("change", () => {

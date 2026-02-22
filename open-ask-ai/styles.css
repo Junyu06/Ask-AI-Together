@@ -900,6 +900,33 @@ body.pane-focus-mode .bubble {
   gap: 8px;
 }
 
+.history-summary-test-result {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.history-summary-test-result.is-loading {
+  color: var(--text-muted);
+}
+
+.history-summary-test-result.is-success {
+  border-color: rgba(25, 135, 84, 0.35);
+  background: rgba(25, 135, 84, 0.12);
+  color: #17693f;
+}
+
+.history-summary-test-result.is-error {
+  border-color: rgba(198, 40, 40, 0.35);
+  background: rgba(198, 40, 40, 0.1);
+  color: #b3261e;
+}
+
 .theme-options {
   display: grid;
   gap: 8px;
@@ -918,6 +945,48 @@ body.pane-focus-mode .bubble {
 
 .theme-option input {
   margin: 0;
+}
+
+.usage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.usage-list li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.usage-key {
+  min-width: 132px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.usage-list li > span:last-child {
+  flex: 1;
+}
+
+.usage-list kbd {
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 1px 6px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .history-panel-body {
