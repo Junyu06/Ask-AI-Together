@@ -6,6 +6,15 @@
 <p align="center">Open-source Chrome extension for multi-AI split view, prompt broadcast, and local conversation history.</p>
 
 <p align="center">
+  <strong>English</strong> |
+  <a href="./README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <sub>GitHub README cannot auto-switch language by viewer locale. Use the language links above.</sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/Junyu06/Ask-AI-Together/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Junyu06/Ask-AI-Together" /></a>
   <a href="https://github.com/Junyu06/Ask-AI-Together/issues"><img alt="Issues" src="https://img.shields.io/github/issues/Junyu06/Ask-AI-Together" /></a>
   <a href="https://github.com/Junyu06/Ask-AI-Together/pulls"><img alt="Pull requests" src="https://img.shields.io/github/issues-pr/Junyu06/Ask-AI-Together" /></a>

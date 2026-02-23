@@ -98,6 +98,7 @@ const I18N = {
     usage_shortcut_newline: "Shift + Enter 换行",
     usage_shortcut_mention_nav: "↑ / ↓ 切换 @/# 候选项，Enter 选中",
     usage_shortcut_mention_pick: "数字 1-9 快速选中 @/# 候选项",
+    usage_issues: "问题反馈",
     save: "保存",
     add_site: "添加站点",
     site_name: "站点名称",
@@ -148,7 +149,9 @@ const I18N = {
     panes_per_row_2: "2 个",
     panes_per_row_3: "3 个",
     panes_per_row_4: "4 个",
-    skip_to_input: "跳到输入框"
+    skip_to_input: "跳到输入框",
+    custom_site_permission_required: "需要授权该站点后，才能自动输入和发送。请在弹窗中允许站点权限。",
+    custom_site_permission_denied: "以下站点未授权，已取消启用：{sites}"
   },
   en: {
     input_bubble_aria: "Input and actions",
@@ -177,6 +180,7 @@ const I18N = {
     usage_shortcut_newline: "Shift + Enter inserts new line",
     usage_shortcut_mention_nav: "Up/Down switch @/# candidates, Enter confirms",
     usage_shortcut_mention_pick: "Number 1-9 quickly picks @/# candidates",
+    usage_issues: "Issues",
     save: "Save",
     add_site: "Add Site",
     site_name: "Site Name",
@@ -227,7 +231,9 @@ const I18N = {
     panes_per_row_2: "2",
     panes_per_row_3: "3",
     panes_per_row_4: "4",
-    skip_to_input: "Skip to input"
+    skip_to_input: "Skip to input",
+    custom_site_permission_required: "Please allow this site permission to enable auto input/send on custom sites.",
+    custom_site_permission_denied: "Permission was not granted for: {sites}. They were not enabled."
   }
 };
 let locale = "en";
@@ -825,6 +831,29 @@ function buildHistoryLinks(item) {
 
 function isHttpUrl(url) {
   return typeof url === "string" && /^https?:\/\//i.test(url);
+}
+
+function originPatternFromUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    if (!/^https?:$/i.test(parsed.protocol)) return "";
+    return `${parsed.origin}/*`;
+  } catch (_error) {
+    return "";
+  }
+}
+
+async function ensureSitePermission(url) {
+  const originPattern = originPatternFromUrl(url);
+  if (!originPattern) return false;
+  try {
+    const has = await chrome.permissions.contains({ origins: [originPattern] });
+    if (has) return true;
+    const granted = await chrome.permissions.request({ origins: [originPattern] });
+    return Boolean(granted);
+  } catch (_error) {
+    return false;
+  }
 }
 
 function normalizeUrlForCompare(url) {
@@ -1681,11 +1710,32 @@ function bindEvents() {
     });
   });
 
-  document.getElementById("save-sites").addEventListener("click", () => {
+  document.getElementById("save-sites").addEventListener("click", async () => {
     const checked = Array.from(siteCheckboxesEl.querySelectorAll("input:checked")).map((x) => x.value);
     const checkedSet = new Set(checked.length > 0 ? checked : defaultSiteIds);
-    selectedSiteIds = siteOrder.filter((id) => checkedSet.has(id));
-    mentionSiteIds = mentionSiteIds.filter((id) => checkedSet.has(id));
+    const deniedNames = [];
+    const allowedIds = [];
+    for (const id of siteOrder.filter((siteId) => checkedSet.has(siteId))) {
+      const site = getSiteById(id);
+      if (!site) continue;
+      if (!site.id.startsWith("custom-")) {
+        allowedIds.push(id);
+        continue;
+      }
+      const granted = await ensureSitePermission(site.url);
+      if (granted) {
+        allowedIds.push(id);
+      } else {
+        deniedNames.push(site.name || id);
+      }
+    }
+    selectedSiteIds = allowedIds;
+    const allowedSet = new Set(allowedIds);
+    mentionSiteIds = mentionSiteIds.filter((id) => allowedSet.has(id));
+    if (deniedNames.length) {
+      alert(formatText(t("custom_site_permission_denied"), { sites: deniedNames.join(", ") }));
+      renderSiteSettings();
+    }
     renderMentionChips();
     saveSelectedSites();
     renderPanes();
@@ -1714,6 +1764,11 @@ function bindEvents() {
 
     try {
       const parsed = new URL(normalizedUrl);
+      const granted = await ensureSitePermission(parsed.toString());
+      if (!granted) {
+        alert(t("custom_site_permission_required"));
+        return;
+      }
       const id = `custom-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
       customSites.push({ id, name, url: parsed.toString() });
       siteOrder.push(id);
