@@ -1017,6 +1017,43 @@ body.pane-focus-mode .bubble {
   flex: 1;
 }
 
+.usage-list li.usage-alert {
+  border-color: rgba(198, 40, 40, 0.45);
+  background: rgba(198, 40, 40, 0.1);
+  color: #9d1b1b;
+  font-weight: 600;
+}
+
+.usage-list li.usage-alert::before {
+  content: "!";
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(198, 40, 40, 0.55);
+  color: #9d1b1b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.usage-alert-text {
+  flex: 1;
+}
+
+:root[data-theme="dark"] .usage-list li.usage-alert {
+  border-color: rgba(255, 107, 107, 0.5);
+  background: rgba(140, 32, 32, 0.26);
+  color: #ffd6d6;
+}
+
+:root[data-theme="dark"] .usage-list li.usage-alert::before {
+  border-color: rgba(255, 142, 142, 0.65);
+  color: #ffd6d6;
+}
+
 .usage-list kbd {
   border: 1px solid var(--line-strong);
   border-bottom-width: 2px;
