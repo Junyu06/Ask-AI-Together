@@ -47,6 +47,7 @@ let historySummaryUrl = "http://127.0.0.1:11434";
 let historySummaryModel = "qwen2.5:7b-instruct";
 let panesPerRow = 0;
 const HISTORY_URL_PATCH_WINDOW_MS = 25000;
+const NEW_CHAT_URL_PATCH_WINDOW_MS = 20000;
 const paneCacheBySite = new Map();
 
 const panesEl = document.getElementById("panes");
@@ -899,12 +900,21 @@ async function renderHistory() {
     const aiTag = item.aiSummary ? `<span class="history-ai-tag">(${escapeHtml(t("ai_tag"))})</span>` : "";
     const meta = `${formatTime(item.ts)} | ${escapeHtml((item.sites || []).join(", "))}`;
     box.innerHTML = `
-      <div class="prompt">${prompt}${aiTag}</div>
+      <div class="history-item-head">
+        <div class="prompt">${prompt}${aiTag}</div>
+        <button type="button" class="site-action site-delete history-delete" data-history-id="${escapeHtml(String(item.id || ""))}" aria-label="${escapeHtml(t("delete"))}" title="${escapeHtml(t("delete"))}">
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
       <div class="meta">${meta}</div>
       ${buildHistoryLinks(item)}
     `;
+    box.querySelector(".history-delete")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void deleteHistoryById(item.id);
+    });
     box.addEventListener("click", (event) => {
-      if (event.target.closest("a")) return;
+      if (event.target.closest("a, button")) return;
       void applyHistoryItem(item);
       promptEl.value = "";
       promptEl.focus();
@@ -913,6 +923,16 @@ async function renderHistory() {
     });
     historyListEl.appendChild(box);
   });
+}
+
+async function deleteHistoryById(entryId) {
+  const id = String(entryId || "");
+  if (!id) return;
+  const history = await loadHistory();
+  const next = history.filter((item) => String(item?.id || "") !== id);
+  if (next.length === history.length) return;
+  await chrome.storage.local.set({ [STORAGE_KEYS.history]: next.slice(0, 200) });
+  await renderHistory();
 }
 
 async function appendHistory(prompt, siteIds = selectedSiteIds) {
@@ -1239,6 +1259,7 @@ async function onSend() {
 
   const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
   if (!targetSiteIds.length) return;
+  pendingNewChatBySite = {};
 
   const payload = {};
   if (mentionSiteIds.length) {
@@ -1478,10 +1499,11 @@ function bindEvents() {
   paneFocusBackdropEl.addEventListener("click", exitPaneFocus);
 
   document.getElementById("send").addEventListener("click", onSend);
-  document.getElementById("new-chat").addEventListener("click", () => {
+  document.getElementById("new-chat").addEventListener("click", async () => {
     const activeSiteIds = Array.from(document.querySelectorAll("iframe"))
       .map((frame) => frame.dataset.siteId)
       .filter((id) => !!id);
+    if (!activeSiteIds.length) return;
     activeSiteIds.forEach((siteId) => {
       delete pendingHistoryBySite[siteId];
     });
@@ -1489,7 +1511,16 @@ function bindEvents() {
     activeSiteIds.forEach((siteId) => {
       snapshot[siteId] = siteUrlState[siteId] || "";
     });
-    pendingNewChatBySite = snapshot;
+    pendingNewChatBySite = {};
+    const entry = await appendHistory(t("new_chat_history"), activeSiteIds);
+    const now = Date.now();
+    activeSiteIds.forEach((siteId) => {
+      pendingNewChatBySite[siteId] = {
+        entryId: entry.id,
+        baselineUrl: String(snapshot[siteId] || ""),
+        expireAt: now + NEW_CHAT_URL_PATCH_WINDOW_MS
+      };
+    });
     sendToFrames("NEW_CHAT", "NEW_CHAT");
   });
 
@@ -1732,15 +1763,18 @@ function bindEvents() {
           void patchHistoryUrl(String(pendingPatch.entryId || ""), payload.siteId, payload.url);
         }
       } else if (Object.prototype.hasOwnProperty.call(pendingNewChatBySite, payload.siteId)) {
-        const prevUrl = String(pendingNewChatBySite[payload.siteId] || "");
-        delete pendingNewChatBySite[payload.siteId];
-        if (isHttpUrl(payload.url) && payload.url !== prevUrl) {
-          const onlySiteId = [payload.siteId];
-          const snapshot = { [payload.siteId]: payload.url };
-          void findLatestMatchingHistory(onlySiteId, snapshot).then((found) => {
-            if (found) return;
-            void appendHistory(t("new_chat_history"), onlySiteId);
-          });
+        const pendingNewChat = pendingNewChatBySite[payload.siteId];
+        if (!pendingNewChat || typeof pendingNewChat !== "object") {
+          delete pendingNewChatBySite[payload.siteId];
+          return;
+        }
+        const expired = Number(pendingNewChat.expireAt || 0) < Date.now();
+        const baseline = String(pendingNewChat.baselineUrl || "");
+        if (expired) {
+          delete pendingNewChatBySite[payload.siteId];
+        } else if (isHttpUrl(payload.url) && payload.url !== baseline) {
+          delete pendingNewChatBySite[payload.siteId];
+          void patchHistoryUrl(String(pendingNewChat.entryId || ""), payload.siteId, payload.url);
         }
       }
     }

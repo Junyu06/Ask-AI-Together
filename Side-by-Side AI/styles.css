@@ -1048,7 +1048,14 @@ body.pane-focus-mode .bubble {
   background: var(--surface-2);
 }
 
+.history-item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .history-item .prompt {
+  flex: 1;
   font-size: 13px;
   line-height: 1.4;
   color: var(--text);
@@ -1058,6 +1065,13 @@ body.pane-focus-mode .bubble {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.history-delete {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 9px;
 }
 
 .history-ai-tag {
