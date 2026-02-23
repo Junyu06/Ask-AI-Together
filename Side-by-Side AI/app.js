@@ -41,13 +41,11 @@ let localeMode = "auto";
 let pendingAttachments = [];
 let focusedSiteId = null;
 let paneFocusButtonPosBySite = {};
-let pendingNewChatBySite = {};
 let historySummaryEnabled = false;
 let historySummaryUrl = "http://127.0.0.1:11434";
 let historySummaryModel = "qwen2.5:7b-instruct";
 let panesPerRow = 0;
 const HISTORY_URL_PATCH_WINDOW_MS = 25000;
-const NEW_CHAT_URL_PATCH_WINDOW_MS = 20000;
 const paneCacheBySite = new Map();
 
 const panesEl = document.getElementById("panes");
@@ -779,15 +777,15 @@ function formatTime(ts) {
 function buildHistoryPreview(text) {
   const oneLine = String(text || "").replaceAll(/\s+/g, " ").trim();
   if (!oneLine) return "";
-  if (oneLine.length <= 20) return oneLine;
-  return `${oneLine.slice(0, 20)}...`;
+  if (oneLine.length <= 50) return oneLine;
+  return `${oneLine.slice(0, 50)}...`;
 }
 
 async function summarizeHistoryPrompt(text) {
   const fallback = buildHistoryPreview(text);
   if (!historySummaryEnabled || !historySummaryUrl || !historySummaryModel) return { text: fallback, ai: false };
   const endpoint = `${historySummaryUrl.replace(/\/+$/, "")}/api/generate`;
-  const prompt = `Summarize this user prompt into ONE short title within 20 chars. Return title only.\n\n${String(text || "").slice(0, 1600)}`;
+  const prompt = `Summarize this user prompt into ONE short title within 50 chars. Return title only.\n\n${String(text || "").slice(0, 1600)}`;
   try {
     const timeout = new Promise((_, reject) => {
       window.setTimeout(() => reject(new Error("timeout")), 12000);
@@ -827,6 +825,29 @@ function buildHistoryLinks(item) {
 
 function isHttpUrl(url) {
   return typeof url === "string" && /^https?:\/\//i.test(url);
+}
+
+function normalizeUrlForCompare(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    parsed.hash = "";
+    return parsed.toString().replace(/\/+$/, "");
+  } catch (_error) {
+    return String(url || "").trim().replace(/\/+$/, "");
+  }
+}
+
+function isDefaultSiteUrl(siteId, url) {
+  const defaultUrl = getSiteById(siteId)?.url || "";
+  if (!isHttpUrl(defaultUrl) || !isHttpUrl(url)) return false;
+  return normalizeUrlForCompare(defaultUrl) === normalizeUrlForCompare(url);
+}
+
+function hasNonDefaultTargetUrl(siteIds, urls) {
+  return siteIds.some((siteId) => {
+    const url = String(urls?.[siteId] || "");
+    return isHttpUrl(url) && !isDefaultSiteUrl(siteId, url);
+  });
 }
 
 function urlsForSelectedSites(siteIds = selectedSiteIds) {
@@ -956,6 +977,37 @@ async function appendHistory(prompt, siteIds = selectedSiteIds) {
   await chrome.storage.local.set({ [STORAGE_KEYS.history]: keep });
   await renderHistory();
   return entry;
+}
+
+function isNewChatHistoryPrompt(prompt) {
+  const value = String(prompt || "").trim();
+  return value === I18N.zh.new_chat_history || value === I18N.en.new_chat_history;
+}
+
+async function upgradeNewChatHistoryEntry(entryId, prompt, siteIds = selectedSiteIds) {
+  const id = String(entryId || "");
+  const rawPrompt = String(prompt || "").trim();
+  if (!id || !rawPrompt) return;
+  const history = await loadHistory();
+  const idx = history.findIndex((item) => item && item.id === id);
+  if (idx < 0) return;
+  const item = history[idx];
+  if (!isNewChatHistoryPrompt(item.prompt)) return;
+  const summary = await summarizeHistoryPrompt(rawPrompt);
+  const validSiteIds = Array.isArray(siteIds) ? siteIds.filter((siteId) => getSiteById(siteId)) : [];
+  item.prompt = summary.text || buildHistoryPreview(rawPrompt);
+  item.aiSummary = !!summary.ai;
+  if (validSiteIds.length) {
+    item.sites = validSiteIds
+      .map(getSiteById)
+      .filter(Boolean)
+      .map((site) => site.name);
+  }
+  history[idx] = item;
+  await chrome.storage.local.set({ [STORAGE_KEYS.history]: history.slice(0, 200) });
+  if (!historyPanelEl.classList.contains("hidden")) {
+    await renderHistory();
+  }
 }
 
 async function patchHistoryUrl(entryId, siteId, url) {
@@ -1259,7 +1311,6 @@ async function onSend() {
 
   const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
   if (!targetSiteIds.length) return;
-  pendingNewChatBySite = {};
 
   const payload = {};
   if (mentionSiteIds.length) {
@@ -1269,19 +1320,25 @@ async function onSend() {
   }
 
   const currentUrls = urlsForSelectedSites(targetSiteIds);
-  const existing = await findLatestMatchingHistory(targetSiteIds, currentUrls);
-  if (!existing || files.length) {
-    const historyPrompt = message || t("image_placeholder_history");
-    const entry = await appendHistory(historyPrompt, targetSiteIds);
-    pendingHistoryBySite = {};
-    const now = Date.now();
-    targetSiteIds.forEach((siteId) => {
-      pendingHistoryBySite[siteId] = {
-        entryId: entry.id,
-        baselineUrl: String(currentUrls[siteId] || ""),
-        expireAt: now + HISTORY_URL_PATCH_WINDOW_MS
-      };
-    });
+  const shouldStoreHistory = Boolean(message) && hasNonDefaultTargetUrl(targetSiteIds, currentUrls);
+  if (shouldStoreHistory) {
+    const existing = await findLatestMatchingHistory(targetSiteIds, currentUrls);
+    if (!existing || files.length) {
+      const historyPrompt = message || t("image_placeholder_history");
+      const entry = await appendHistory(historyPrompt, targetSiteIds);
+      pendingHistoryBySite = {};
+      const now = Date.now();
+      targetSiteIds.forEach((siteId) => {
+        pendingHistoryBySite[siteId] = {
+          entryId: entry.id,
+          baselineUrl: String(currentUrls[siteId] || ""),
+          expireAt: now + HISTORY_URL_PATCH_WINDOW_MS
+        };
+      });
+    } else if (isNewChatHistoryPrompt(existing.prompt)) {
+      await upgradeNewChatHistoryEntry(existing.id, message, targetSiteIds);
+      pendingHistoryBySite = {};
+    }
   } else {
     pendingHistoryBySite = {};
   }
@@ -1499,27 +1556,13 @@ function bindEvents() {
   paneFocusBackdropEl.addEventListener("click", exitPaneFocus);
 
   document.getElementById("send").addEventListener("click", onSend);
-  document.getElementById("new-chat").addEventListener("click", async () => {
+  document.getElementById("new-chat").addEventListener("click", () => {
     const activeSiteIds = Array.from(document.querySelectorAll("iframe"))
       .map((frame) => frame.dataset.siteId)
       .filter((id) => !!id);
     if (!activeSiteIds.length) return;
     activeSiteIds.forEach((siteId) => {
       delete pendingHistoryBySite[siteId];
-    });
-    const snapshot = {};
-    activeSiteIds.forEach((siteId) => {
-      snapshot[siteId] = siteUrlState[siteId] || "";
-    });
-    pendingNewChatBySite = {};
-    const entry = await appendHistory(t("new_chat_history"), activeSiteIds);
-    const now = Date.now();
-    activeSiteIds.forEach((siteId) => {
-      pendingNewChatBySite[siteId] = {
-        entryId: entry.id,
-        baselineUrl: String(snapshot[siteId] || ""),
-        expireAt: now + NEW_CHAT_URL_PATCH_WINDOW_MS
-      };
     });
     sendToFrames("NEW_CHAT", "NEW_CHAT");
   });
@@ -1761,20 +1804,6 @@ function bindEvents() {
         } else if (isHttpUrl(payload.url) && payload.url !== baseline) {
           delete pendingHistoryBySite[payload.siteId];
           void patchHistoryUrl(String(pendingPatch.entryId || ""), payload.siteId, payload.url);
-        }
-      } else if (Object.prototype.hasOwnProperty.call(pendingNewChatBySite, payload.siteId)) {
-        const pendingNewChat = pendingNewChatBySite[payload.siteId];
-        if (!pendingNewChat || typeof pendingNewChat !== "object") {
-          delete pendingNewChatBySite[payload.siteId];
-          return;
-        }
-        const expired = Number(pendingNewChat.expireAt || 0) < Date.now();
-        const baseline = String(pendingNewChat.baselineUrl || "");
-        if (expired) {
-          delete pendingNewChatBySite[payload.siteId];
-        } else if (isHttpUrl(payload.url) && payload.url !== baseline) {
-          delete pendingNewChatBySite[payload.siteId];
-          void patchHistoryUrl(String(pendingNewChat.entryId || ""), payload.siteId, payload.url);
         }
       }
     }

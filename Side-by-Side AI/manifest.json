@@ -13,8 +13,12 @@
   "background": {
     "service_worker": "background.js"
   },
+  "icons": {
+    "128": "store-assets/icon-128.png"
+  },
   "action": {
-    "default_title": "Side-by-Side AI"
+    "default_title": "Side-by-Side AI",
+    "default_icon": "store-assets/icon-128.png"
   },
   "content_scripts": [
     {
