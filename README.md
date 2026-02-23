@@ -11,10 +11,6 @@
 </p>
 
 <p align="center">
-  <sub>GitHub README cannot auto-switch language by viewer locale. Use the language links above.</sub>
-</p>
-
-<p align="center">
   <a href="https://github.com/Junyu06/Ask-AI-Together/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Junyu06/Ask-AI-Together" /></a>
   <a href="https://github.com/Junyu06/Ask-AI-Together/issues"><img alt="Issues" src="https://img.shields.io/github/issues/Junyu06/Ask-AI-Together" /></a>
   <a href="https://github.com/Junyu06/Ask-AI-Together/pulls"><img alt="Pull requests" src="https://img.shields.io/github/issues-pr/Junyu06/Ask-AI-Together" /></a>
@@ -89,6 +85,12 @@ Issues and pull requests are welcome.
 
 - Report bugs: <https://github.com/Junyu06/Ask-AI-Together/issues>
 - Submit PRs: <https://github.com/Junyu06/Ask-AI-Together/pulls>
+
+## Buy Me a Coffee
+
+If this project helps you, you can support it here:
+
+- <https://buymeacoffee.com/junyu06>
 
 ## License
 

@@ -86,6 +86,12 @@
 - 反馈问题：<https://github.com/Junyu06/Ask-AI-Together/issues>
 - 提交 PR：<https://github.com/Junyu06/Ask-AI-Together/pulls>
 
+## Buy Me a Coffee
+
+如果这个项目对你有帮助，欢迎在这里支持：
+
+- <https://buymeacoffee.com/junyu06>
+
 ## 许可证
 
 [MIT](./LICENSE)
