@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./Side-by-Side%20AI/store-assets/icon-128.png" alt="Ask AI Together logo" width="96" height="96" />
+</p>
+
 <h1 align="center">Ask AI Together</h1>
 <p align="center">Open-source Chrome extension for multi-AI split view, prompt broadcast, and local conversation history.</p>
 
@@ -38,6 +42,14 @@
 - Claude
 - Gemini
 
+## Screenshots
+
+<p align="center">
+  <img src="./Side-by-Side%20AI/store-assets/screenshot-1.png" alt="Screenshot 1" width="32%" />
+  <img src="./Side-by-Side%20AI/store-assets/screenshot-2.png" alt="Screenshot 2" width="32%" />
+  <img src="./Side-by-Side%20AI/store-assets/screenshot-3.png" alt="Screenshot 3" width="32%" />
+</p>
+
 ## Quick Start
 
 1. Open Chrome extensions page: `chrome://extensions/`
@@ -71,7 +83,7 @@ Issues and pull requests are welcome.
 
 ## License
 
-No license file is currently included in this repository.
+[MIT](./LICENSE)
 
 ---
 
