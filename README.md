@@ -63,6 +63,22 @@
 4. Select folder: `Side-by-Side AI`
 5. Click extension icon to open the main page
 
+## Package For Release
+
+Build a Chrome Web Store upload zip from the repo root:
+
+```bash
+./scripts/package-extension.sh
+```
+
+The script reads the version from `Side-by-Side AI/manifest.json` and writes:
+
+```text
+dist/side-by-side-ai-v<version>.zip
+```
+
+The zip is created with `manifest.json` at the archive root so it can be uploaded directly to Chrome Web Store.
+
 ## Project Structure
 
 - `Side-by-Side AI/manifest.json`: MV3 config
