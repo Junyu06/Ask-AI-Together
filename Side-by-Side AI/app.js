@@ -45,8 +45,11 @@ let historySummaryEnabled = false;
 let historySummaryUrl = "http://127.0.0.1:11434";
 let historySummaryModel = "qwen2.5:7b-instruct";
 let panesPerRow = 0;
+const pendingLatestResponseRequests = new Map();
+let activeSendRequest = null;
 const HISTORY_URL_PATCH_WINDOW_MS = 25000;
 const paneCacheBySite = new Map();
+const SEND_PROGRESS_TIMEOUT_MS = 15000;
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
@@ -68,6 +71,9 @@ const historySummaryConfigEl = document.getElementById("history-summary-config")
 const testHistorySummaryBtnEl = document.getElementById("test-history-summary");
 const historySummaryTestResultEl = document.getElementById("history-summary-test-result");
 const usageShortcutExitKeyEl = document.getElementById("usage-shortcut-exit-key");
+const combineLatestBtnEl = document.getElementById("combine-latest");
+const sendBtnEl = document.getElementById("send");
+const sendStatusEl = document.getElementById("send-status");
 
 const mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
 const I18N = {
@@ -76,12 +82,19 @@ const I18N = {
     toolbar_aria: "工具栏",
     settings_title: "设置",
     history_title: "历史",
+    combine_latest: "汇总最新回复",
+    combine_latest_loading: "汇总中…",
+    combine_latest_prompt_hint: "请在这里写你的要求",
+    combine_latest_unavailable: "[未获取到回复]",
     new_chat: "新聊天",
     selected_sites: "已选择站点",
     prompt_label: "输入问题",
     prompt_placeholder_default: "输入问题，@ 单独 AI，# 放大 AI；回车发送（Shift+Enter 换行）",
     prompt_placeholder_focus: "输入问题，{shortcut} 退出放大（Shift+Enter 换行）",
     send: "发送",
+    sending_message: "正在发送到 {sites}（{done}/{total}）。",
+    sending_waiting_page: "{sites} 已提交，等待页面出现变化（{done}/{total}）。",
+    sending_timeout: "{sites} 仍未回传页面变化，已恢复操作。",
     close: "关闭",
     settings_categories: "设置类别",
     sites_tab: "站点",
@@ -94,6 +107,11 @@ const I18N = {
     usage_login_first: "先去各 AI 站点登录账号，再使用本 extension。",
     usage_shortcut_at: "@ 选择单独 AI 作为发送目标",
     usage_shortcut_hash: "# 选择并放大单个 AI",
+    usage_icon_summary: "汇总图标会抓取当前各 AI 最新回复，并整理到输入框里，供你继续写要求。",
+    usage_icon_settings: "设置图标用于选择站点、布局、语言和历史摘要配置。",
+    usage_icon_history: "历史图标用于查看并恢复之前保存的会话入口。",
+    usage_icon_new_chat: "新聊天图标会通知当前已打开的站点新建会话。",
+    usage_long_text_warning: "长文本在部分站点注入时会比较慢，浏览器偶尔出现“未响应”提示属于正常情况，请耐心等待。",
     usage_shortcut_exit: "退出放大",
     usage_shortcut_send: "Enter 发送消息",
     usage_shortcut_newline: "Shift + Enter 换行",
@@ -162,12 +180,19 @@ const I18N = {
     toolbar_aria: "Toolbar",
     settings_title: "Settings",
     history_title: "History",
+    combine_latest: "Combine Latest",
+    combine_latest_loading: "Combining…",
+    combine_latest_prompt_hint: "Write your request here",
+    combine_latest_unavailable: "[Unavailable]",
     new_chat: "New Chat",
     selected_sites: "Selected Sites",
     prompt_label: "Prompt",
     prompt_placeholder_default: "Message… @ targets one AI, # expands one AI. Enter sends (Shift+Enter newline).",
     prompt_placeholder_focus: "Message… Press {shortcut} to exit expanded view (Shift+Enter newline).",
     send: "Send",
+    sending_message: "Sending to {sites} ({done}/{total}).",
+    sending_waiting_page: "{sites} submitted. Waiting for page updates ({done}/{total}).",
+    sending_timeout: "{sites} did not report page updates yet. Controls are available again.",
     close: "Close",
     settings_categories: "Settings categories",
     sites_tab: "Sites",
@@ -180,6 +205,11 @@ const I18N = {
     usage_login_first: "Sign in on each AI site first, then use this extension.",
     usage_shortcut_at: "@ targets one AI for sending",
     usage_shortcut_hash: "# picks and expands one AI pane",
+    usage_icon_summary: "The summary icon pulls the latest reply from each current AI and formats them into the prompt for follow-up instructions.",
+    usage_icon_settings: "The settings icon opens site, layout, language, and history summary configuration.",
+    usage_icon_history: "The history icon opens saved session entries so you can jump back into them.",
+    usage_icon_new_chat: "The new chat icon asks the currently open sites to start a fresh conversation.",
+    usage_long_text_warning: "Large prompts can take longer to inject on some sites. If the browser briefly shows an unresponsive warning, that is expected. Please wait.",
     usage_shortcut_exit: "Exit expanded view",
     usage_shortcut_send: "Enter sends message",
     usage_shortcut_newline: "Shift + Enter inserts new line",
@@ -287,6 +317,138 @@ function setHistorySummaryTestResult(message = "", state = "") {
   historySummaryTestResultEl.classList.toggle("hidden", !message);
   historySummaryTestResultEl.classList.remove("is-success", "is-error", "is-loading");
   if (state) historySummaryTestResultEl.classList.add(`is-${state}`);
+}
+
+function setSendStatus(message = "", active = false) {
+  if (!sendStatusEl) return;
+  sendStatusEl.textContent = message;
+  sendStatusEl.classList.toggle("hidden", !message);
+  sendStatusEl.classList.toggle("is-active", active && !!message);
+}
+
+function sendingSiteLabel(siteIds) {
+  const names = siteIds
+    .map((siteId) => getSiteById(siteId)?.name || siteId)
+    .filter(Boolean);
+  if (!names.length) return "AI";
+  return names.join(", ");
+}
+
+function setPaneSendState(siteId, state = "") {
+  const pane = document.querySelector(`.pane[data-site-id="${CSS.escape(siteId)}"]`);
+  if (!pane) return;
+  pane.classList.remove("is-sending", "is-awaiting-response");
+  if (state === "sending") pane.classList.add("is-sending");
+  if (state === "awaiting") pane.classList.add("is-awaiting-response");
+}
+
+async function flushUiFrame() {
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+function pendingSendSubmittedCount(sendRequest) {
+  return sendRequest
+    ? Array.from(sendRequest.siteStates.values()).filter((state) => ["submitted", "acknowledged", "timeout", "failed"].includes(state)).length
+    : 0;
+}
+
+function pendingSendAcknowledgedCount(sendRequest) {
+  return sendRequest
+    ? Array.from(sendRequest.siteStates.values()).filter((state) => ["acknowledged"].includes(state)).length
+    : 0;
+}
+
+function renderActiveSendFeedback() {
+  if (!activeSendRequest) {
+    sendBtnEl?.classList.remove("is-sending");
+    if (sendBtnEl) sendBtnEl.disabled = false;
+    setSendStatus("", false);
+    return;
+  }
+
+  const total = activeSendRequest.siteIds.length;
+  const submitted = pendingSendSubmittedCount(activeSendRequest);
+  const acknowledged = pendingSendAcknowledgedCount(activeSendRequest);
+  const sites = sendingSiteLabel(activeSendRequest.siteIds);
+  const controlsLocked = submitted < total;
+
+  sendBtnEl?.classList.toggle("is-sending", controlsLocked);
+  if (sendBtnEl) sendBtnEl.disabled = controlsLocked;
+
+  if (submitted < total) {
+    setSendStatus(formatText(t("sending_message"), { sites, done: submitted, total }), true);
+    return;
+  }
+
+  if (acknowledged < total) {
+    setSendStatus(formatText(t("sending_waiting_page"), { sites, done: acknowledged, total }), false);
+    return;
+  }
+
+  setSendStatus("", false);
+}
+
+function finishSendingFeedback(requestId, timedOut = false) {
+  if (!activeSendRequest || activeSendRequest.requestId !== requestId) return;
+  window.clearTimeout(activeSendRequest.timeoutId);
+  const { siteIds } = activeSendRequest;
+  siteIds.forEach((siteId) => setPaneSendState(siteId, ""));
+  activeSendRequest = null;
+  sendBtnEl?.classList.remove("is-sending");
+  if (sendBtnEl) sendBtnEl.disabled = false;
+  if (timedOut) {
+    setSendStatus(formatText(t("sending_timeout"), { sites: sendingSiteLabel(siteIds) }), false);
+    window.setTimeout(() => {
+      if (!activeSendRequest) setSendStatus("", false);
+    }, 2200);
+    return;
+  }
+  setSendStatus("", false);
+}
+
+function startSendingFeedback(siteIds, requestId) {
+  if (activeSendRequest) {
+    finishSendingFeedback(activeSendRequest.requestId, false);
+  }
+  siteIds.forEach((siteId) => setPaneSendState(siteId, "sending"));
+  activeSendRequest = {
+    requestId,
+    siteIds: [...siteIds],
+    siteStates: new Map(siteIds.map((siteId) => [siteId, "sending"])),
+    timeoutId: window.setTimeout(() => {
+      finishSendingFeedback(requestId, true);
+    }, SEND_PROGRESS_TIMEOUT_MS)
+  };
+  renderActiveSendFeedback();
+}
+
+function updateSendingFeedbackProgress(payload = {}) {
+  if (!activeSendRequest) return;
+  const requestId = String(payload.requestId || "");
+  const siteId = String(payload.siteId || "");
+  const phase = String(payload.phase || "");
+  if (!requestId || requestId !== activeSendRequest.requestId || !activeSendRequest.siteStates.has(siteId)) return;
+
+  activeSendRequest.siteStates.set(siteId, phase);
+  if (phase === "injecting" || phase === "sending") {
+    setPaneSendState(siteId, "sending");
+  } else if (phase === "submitted") {
+    setPaneSendState(siteId, "awaiting");
+  } else {
+    setPaneSendState(siteId, "");
+  }
+
+  renderActiveSendFeedback();
+  const terminal = Array.from(activeSendRequest.siteStates.values()).every((state) =>
+    ["acknowledged", "timeout", "failed"].includes(state)
+  );
+  const hasNonAckTerminal = Array.from(activeSendRequest.siteStates.values()).some((state) =>
+    ["timeout", "failed"].includes(state)
+  );
+
+  if (terminal) {
+    finishSendingFeedback(requestId, hasNonAckTerminal);
+  }
 }
 
 function detectLocale() {
@@ -586,6 +748,7 @@ function renderPanes() {
 }
 
 function createPane(site) {
+  const initialUrl = isHttpUrl(siteUrlState[site.id]) ? siteUrlState[site.id] : site.url;
   const pane = document.createElement("div");
   pane.className = "pane is-loading";
   pane.dataset.siteId = site.id;
@@ -605,7 +768,7 @@ function createPane(site) {
         </svg>
       </button>
     </div>
-    <iframe name="${site.name}" data-site-id="${site.id}" src="${site.url}" allow="clipboard-read; clipboard-write"></iframe>
+    <iframe name="${site.name}" data-site-id="${site.id}" src="${escapeHtml(initialUrl)}" allow="clipboard-read; clipboard-write"></iframe>
   `;
   const frame = pane.querySelector("iframe");
   if (frame) {
@@ -901,8 +1064,8 @@ function urlsForSelectedSites(siteIds = selectedSiteIds) {
 
 function sameUrlSnapshot(a, b, siteIds) {
   return siteIds.every((siteId) => {
-    const av = String(a?.[siteId] || "");
-    const bv = String(b?.[siteId] || "");
+    const av = normalizeUrlForCompare(a?.[siteId] || "");
+    const bv = normalizeUrlForCompare(b?.[siteId] || "");
     return av === bv;
   });
 }
@@ -1054,7 +1217,7 @@ async function patchHistoryUrl(entryId, siteId, url) {
   if (idx < 0) return;
   const item = history[idx];
   const urls = item.urls && typeof item.urls === "object" ? { ...item.urls } : {};
-  if (urls[siteId] === url) return;
+  if (normalizeUrlForCompare(urls[siteId] || "") === normalizeUrlForCompare(url)) return;
   urls[siteId] = url;
   item.urls = urls;
   history[idx] = item;
@@ -1078,6 +1241,80 @@ function sendToTargetFrames(type, message, targetSiteIds, payload = {}) {
     if (!targetSet.has(frame.dataset.siteId)) return;
     frame.contentWindow.postMessage({ type, message, payload, config: { siteId: frame.dataset.siteId } }, "*");
   });
+}
+
+function normalizeCollectedResponseText(text) {
+  return String(text || "")
+    .replaceAll(/\r\n?/g, "\n")
+    .replaceAll(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildCombinedLatestPrompt(sections, existingPrompt = "") {
+  const body = sections
+    .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || t("combine_latest_unavailable")}`)
+    .join("\n\n---------\n\n");
+  const footer = String(existingPrompt || "").trim() || t("combine_latest_prompt_hint");
+  return `${body}\n\n---------\n\n${footer}`.trim();
+}
+
+async function collectLatestResponses(siteIds) {
+  const targetSiteIds = Array.isArray(siteIds) ? siteIds.filter((siteId) => getSiteById(siteId)) : [];
+  if (!targetSiteIds.length) return [];
+
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const responses = new Map();
+  return new Promise((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      pendingLatestResponseRequests.delete(requestId);
+      resolve(
+        targetSiteIds.map((siteId) => {
+          const site = getSiteById(siteId);
+          return {
+            siteId,
+            siteName: site?.name || siteId,
+            text: responses.get(siteId) || ""
+          };
+        })
+      );
+    }, 2500);
+
+    pendingLatestResponseRequests.set(requestId, {
+      siteIds: new Set(targetSiteIds),
+      responses,
+      timeoutId,
+      resolve
+    });
+
+    sendToTargetFrames("COLLECT_LAST_RESPONSE", "", targetSiteIds, { requestId });
+  });
+}
+
+async function combineLatestResponsesIntoPrompt() {
+  const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
+  if (!targetSiteIds.length) return;
+
+  if (combineLatestBtnEl) {
+    combineLatestBtnEl.disabled = true;
+    combineLatestBtnEl.setAttribute("title", t("combine_latest_loading"));
+    combineLatestBtnEl.setAttribute("aria-label", t("combine_latest_loading"));
+  }
+
+  try {
+    const sections = await collectLatestResponses(targetSiteIds);
+    promptEl.value = buildCombinedLatestPrompt(sections, promptEl.value);
+    promptEl.focus();
+    const cursor = promptEl.value.length;
+    promptEl.setSelectionRange(cursor, cursor);
+    autoResizePrompt();
+    refreshMentionDropdown();
+  } finally {
+    if (combineLatestBtnEl) {
+      combineLatestBtnEl.disabled = false;
+      combineLatestBtnEl.setAttribute("title", t("combine_latest"));
+      combineLatestBtnEl.setAttribute("aria-label", t("combine_latest"));
+    }
+  }
 }
 
 function normalizeQuotedText(text) {
@@ -1337,6 +1574,7 @@ function refreshMentionDropdown() {
 }
 
 async function onSend() {
+  if (activeSendRequest && pendingSendSubmittedCount(activeSendRequest) < activeSendRequest.siteIds.length) return;
   const message = promptEl.value.trim();
   const files = pendingAttachments.map((item) => ({
     name: item.name,
@@ -1349,7 +1587,11 @@ async function onSend() {
   const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
   if (!targetSiteIds.length) return;
 
-  const payload = {};
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  startSendingFeedback(targetSiteIds, requestId);
+  await flushUiFrame();
+
+  const payload = { requestId };
   if (mentionSiteIds.length) {
     sendToTargetFrames("CHAT_MESSAGE", message, targetSiteIds, payload);
   } else {
@@ -1357,9 +1599,11 @@ async function onSend() {
   }
 
   const currentUrls = urlsForSelectedSites(targetSiteIds);
-  const shouldStoreHistory = Boolean(message) && hasNonDefaultTargetUrl(targetSiteIds, currentUrls);
+  const shouldStoreHistory = Boolean(message);
   if (shouldStoreHistory) {
-    const existing = await findLatestMatchingHistory(targetSiteIds, currentUrls);
+    const existing = hasNonDefaultTargetUrl(targetSiteIds, currentUrls)
+      ? await findLatestMatchingHistory(targetSiteIds, currentUrls)
+      : null;
     if (!existing || files.length) {
       const historyPrompt = message || t("image_placeholder_history");
       const entry = await appendHistory(historyPrompt, targetSiteIds);
@@ -1837,6 +2081,9 @@ function bindEvents() {
   testHistorySummaryBtnEl?.addEventListener("click", () => {
     void testHistorySummaryConfig();
   });
+  combineLatestBtnEl?.addEventListener("click", () => {
+    void combineLatestResponsesIntoPrompt();
+  });
 
   mediaDark.addEventListener("change", () => {
     if (themeMode === "system") applyTheme();
@@ -1851,6 +2098,33 @@ function bindEvents() {
     if (event.data.type === "QUOTE_TEXT") {
       const raw = typeof event.data.payload === "string" ? event.data.payload : event.data.payload?.text;
       applyQuoteTextToPrompt(raw || "");
+      return;
+    }
+    if (event.data.type === "LAST_RESPONSE") {
+      const payload = event.data.payload || {};
+      const requestId = String(payload.requestId || "");
+      const siteId = String(payload.siteId || "");
+      if (!requestId || !siteId) return;
+      const pending = pendingLatestResponseRequests.get(requestId);
+      if (!pending || !pending.siteIds.has(siteId)) return;
+      pending.responses.set(siteId, normalizeCollectedResponseText(payload.text || ""));
+      if (pending.responses.size < pending.siteIds.size) return;
+      window.clearTimeout(pending.timeoutId);
+      pendingLatestResponseRequests.delete(requestId);
+      pending.resolve(
+        Array.from(pending.siteIds).map((id) => {
+          const site = getSiteById(id);
+          return {
+            siteId: id,
+            siteName: site?.name || id,
+            text: pending.responses.get(id) || ""
+          };
+        })
+      );
+      return;
+    }
+    if (event.data.type === "SEND_PROGRESS") {
+      updateSendingFeedbackProgress(event.data.payload || {});
       return;
     }
     if (event.data.type !== "UPDATE_HISTORY") return;
@@ -1883,7 +2157,7 @@ function initDraggableBubble(targetId) {
   let startX = 0;
   let startY = 0;
   let baseLeft = 0;
-  let baseTop = 0;
+  let baseBottom = 0;
 
   target.addEventListener("mousedown", (e) => {
     const blocked = e.target.closest("textarea, button, input, a, label");
@@ -1898,26 +2172,26 @@ function initDraggableBubble(targetId) {
 
     dragging = true;
     target.style.left = `${rect.left}px`;
-    target.style.top = `${rect.top}px`;
-    target.style.bottom = "auto";
+    target.style.top = "auto";
+    target.style.bottom = `${window.innerHeight - rect.bottom}px`;
     target.style.transform = "none";
     startX = e.clientX;
     startY = e.clientY;
     baseLeft = rect.left;
-    baseTop = rect.top;
+    baseBottom = window.innerHeight - rect.bottom;
     document.body.style.userSelect = "none";
   });
 
   window.addEventListener("mousemove", (e) => {
     if (!dragging) return;
     const nextLeft = baseLeft + (e.clientX - startX);
-    const nextTop = baseTop + (e.clientY - startY);
+    const nextBottom = baseBottom - (e.clientY - startY);
     const maxLeft = window.innerWidth - target.offsetWidth;
-    const maxTop = window.innerHeight - target.offsetHeight;
+    const maxBottom = window.innerHeight - target.offsetHeight;
     const clampedLeft = Math.max(0, Math.min(maxLeft, nextLeft));
-    const clampedTop = Math.max(0, Math.min(maxTop, nextTop));
+    const clampedBottom = Math.max(0, Math.min(maxBottom, nextBottom));
     target.style.left = `${clampedLeft}px`;
-    target.style.top = `${clampedTop}px`;
+    target.style.bottom = `${clampedBottom}px`;
   });
 
   window.addEventListener("mouseup", () => {

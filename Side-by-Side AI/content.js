@@ -87,6 +87,18 @@ const GENERIC_SITE = {
   newChatSelectors: []
 };
 
+const RESPONSE_SELECTORS = {
+  chatgpt: ['article [data-message-author-role="assistant"]', '[data-message-author-role="assistant"]'],
+  deepseek: ['[data-role="assistant"]', '.ds-markdown', '.markdown-body'],
+  kimi: ['[data-role="assistant"]', '.markdown', '.segment-content'],
+  qwen: ['[data-role="assistant"]', '.message-item-assistant', '.markdown-body'],
+  doubao: ['[data-testid*="assistant"]', '.markdown-body', '.semi-typography'],
+  yuanbao: ['[data-role="assistant"]', '.agent-message', '.markdown-body'],
+  grok: ['[data-testid*="assistant"]', '[data-message-author-role="assistant"]', '.prose'],
+  claude: ['[data-is-streaming="false"] .font-claude-message', '[data-testid*="assistant"]', '.prose'],
+  gemini: ['message-content', '[data-response-id]', '.model-response-text', '.response-content']
+};
+
 function findFirst(selectors) {
   return queryDeepFirst(selectors) || null;
 }
@@ -144,6 +156,72 @@ function queryDeepFirstVisible(selectors, root = document) {
   return all.find(isVisible) || null;
 }
 
+function collectTextFromNode(node) {
+  return String(node?.innerText || node?.textContent || "")
+    .replaceAll(/\r\n?/g, "\n")
+    .replaceAll(/\u00a0/g, " ")
+    .replaceAll(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function isLikelyReplyNode(node, inputEl) {
+  if (!node || node === inputEl || !isVisible(node)) return false;
+  if (inputEl && (node === inputEl || node.contains(inputEl) || inputEl.contains(node))) return false;
+  if (node.closest?.("textarea, input, form, [contenteditable='true'], nav, header, footer, aside")) return false;
+  const text = collectTextFromNode(node);
+  if (text.length < 20) return false;
+  return true;
+}
+
+function extractLatestResponseText() {
+  const site = currentSite() || GENERIC_SITE;
+  const inputEl = findFirst(site.inputSelectors);
+  const selectors = RESPONSE_SELECTORS[site.id] || [];
+  const explicitMatches = queryDeepAll(selectors).filter((node) => isLikelyReplyNode(node, inputEl));
+  if (explicitMatches.length) {
+    return collectTextFromNode(explicitMatches[explicitMatches.length - 1]);
+  }
+
+  const fallbackSelectors = [
+    '[data-message-author-role="assistant"]',
+    '[data-role="assistant"]',
+    '[data-testid*="assistant"]',
+    'article',
+    '.markdown',
+    '.markdown-body',
+    '.prose',
+    '[role="article"]'
+  ];
+  const nodes = queryDeepAll(fallbackSelectors).filter((node) => isLikelyReplyNode(node, inputEl));
+  if (!nodes.length) return "";
+
+  nodes.sort((a, b) => {
+    const ar = a.getBoundingClientRect();
+    const br = b.getBoundingClientRect();
+    if (ar.bottom !== br.bottom) return ar.bottom - br.bottom;
+    return ar.top - br.top;
+  });
+  return collectTextFromNode(nodes[nodes.length - 1]);
+}
+
+function collectReplyNodes(site, inputEl) {
+  const selectors = RESPONSE_SELECTORS[site.id] || [];
+  const explicitMatches = queryDeepAll(selectors).filter((node) => isLikelyReplyNode(node, inputEl));
+  if (explicitMatches.length) return explicitMatches;
+
+  const fallbackSelectors = [
+    '[data-message-author-role="assistant"]',
+    '[data-role="assistant"]',
+    '[data-testid*="assistant"]',
+    'article',
+    '.markdown',
+    '.markdown-body',
+    '.prose',
+    '[role="article"]'
+  ];
+  return queryDeepAll(fallbackSelectors).filter((node) => isLikelyReplyNode(node, inputEl));
+}
+
 function clickByText() {
   const keywords = ["新聊天", "新对话", "新建对话", "new chat", "new conversation"];
   const nodes = Array.from(document.querySelectorAll("button, a, div[role='button'], [aria-label], [title]"));
@@ -159,7 +237,7 @@ function clickByText() {
   return true;
 }
 
-function setInputValue(el, text) {
+function setInputValue(el, text, siteId = "") {
   if (!el) return false;
 
   const tag = el.tagName;
@@ -171,14 +249,134 @@ function setInputValue(el, text) {
   }
 
   if (el.isContentEditable) {
-    el.focus();
-    el.textContent = text;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
+    return setContentEditableValue(el, text, siteId);
   }
 
   return false;
+}
+
+function normalizeEditableText(text) {
+  return String(text || "")
+    .replaceAll("\r\n", "\n")
+    .replaceAll("\r", "\n")
+    .replace(/\u00a0/g, " ");
+}
+
+function readEditableText(el) {
+  return normalizeEditableText(el?.innerText || el?.textContent || "");
+}
+
+function readInputValue(el) {
+  if (!el) return "";
+  const tag = String(el.tagName || "").toUpperCase();
+  if (tag === "TEXTAREA" || tag === "INPUT") {
+    return normalizeEditableText(el.value || "");
+  }
+  if (el.isContentEditable) {
+    return readEditableText(el);
+  }
+  return normalizeEditableText(el.textContent || "");
+}
+
+function placeCaretAtEnd(el) {
+  const selection = window.getSelection?.();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function replaceEditableContents(el, text) {
+  const lines = normalizeEditableText(text).split("\n");
+  const fragment = document.createDocumentFragment();
+
+  lines.forEach((line, index) => {
+    if (line) {
+      fragment.appendChild(document.createTextNode(line));
+    }
+    if (index < lines.length - 1) {
+      fragment.appendChild(document.createElement("br"));
+    }
+  });
+
+  el.replaceChildren(fragment);
+  placeCaretAtEnd(el);
+}
+
+function replaceChatGptContents(el, text) {
+  const lines = normalizeEditableText(text).split("\n");
+  const fragment = document.createDocumentFragment();
+
+  lines.forEach((line) => {
+    const p = document.createElement("p");
+    if (line) {
+      p.textContent = line;
+    } else {
+      p.appendChild(document.createElement("br"));
+    }
+    fragment.appendChild(p);
+  });
+
+  if (!lines.length) {
+    const p = document.createElement("p");
+    p.appendChild(document.createElement("br"));
+    fragment.appendChild(p);
+  }
+
+  el.replaceChildren(fragment);
+  placeCaretAtEnd(el);
+}
+
+function setContentEditableValue(el, text, siteId = "") {
+  el.focus();
+  const selection = window.getSelection?.();
+  if (selection) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  try {
+    if (siteId === "chatgpt") {
+      const html = normalizeEditableText(text)
+        .split("\n")
+        .map((line) => `<p>${line ? line.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : "<br>"}</p>`)
+        .join("");
+      if (html && document.execCommand("insertHTML", false, html)) {
+        const actual = readEditableText(el).trimEnd();
+        const expected = normalizeEditableText(text).trimEnd();
+        if (actual === expected) {
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }
+      }
+    }
+
+    if (document.execCommand("insertText", false, text)) {
+      const actual = readEditableText(el).trimEnd();
+      const expected = normalizeEditableText(text).trimEnd();
+      if (actual === expected) {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+    }
+  } catch (_error) {
+    // Fall through to DOM-based insertion for editors that ignore execCommand.
+  }
+
+  if (siteId === "chatgpt") {
+    replaceChatGptContents(el, text);
+  } else {
+    replaceEditableContents(el, text);
+  }
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
 }
 
 function clickSend(site, inputEl) {
@@ -526,16 +724,100 @@ async function attachFiles(inputEl, items, siteId = "") {
   return attachByPasteTargets([inputEl, document.activeElement, document.body].filter(Boolean), files);
 }
 
+function postSendProgress(requestId, siteId, phase, extra = {}) {
+  if (!requestId || !siteId || window.parent === window) return;
+  window.parent.postMessage(
+    {
+      type: "SEND_PROGRESS",
+      payload: {
+        requestId,
+        siteId,
+        phase,
+        ...extra
+      }
+    },
+    "*"
+  );
+}
+
+function captureSendSnapshot(site, inputEl) {
+  const replyNodes = collectReplyNodes(site, inputEl);
+  return {
+    replyCount: replyNodes.length,
+    latestReply: normalizeEditableText(extractLatestResponseText()),
+    inputValue: readInputValue(inputEl)
+  };
+}
+
+function hasPageAcknowledgedSend(before, after, message) {
+  const expected = normalizeEditableText(message).trim();
+  const beforeInput = normalizeEditableText(before?.inputValue || "").trim();
+  const afterInput = normalizeEditableText(after?.inputValue || "").trim();
+
+  if (after.replyCount > before.replyCount) return true;
+  if (after.latestReply && after.latestReply !== before.latestReply) return true;
+  if (expected && beforeInput === expected && afterInput !== expected) return true;
+  if (!expected && afterInput !== beforeInput) return true;
+  return false;
+}
+
+function waitForSendAcknowledgement(site, inputEl, message, baseline, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = 0;
+    let observer = null;
+
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      if (observer) observer.disconnect();
+      if (timeoutId) window.clearTimeout(timeoutId);
+      resolve(value);
+    };
+
+    const inspect = () => {
+      const currentInput = findFirst(site.inputSelectors) || inputEl;
+      const snapshot = captureSendSnapshot(site, currentInput);
+      if (hasPageAcknowledgedSend(baseline, snapshot, message)) {
+        finish(true);
+      }
+    };
+
+    timeoutId = window.setTimeout(() => finish(false), timeoutMs);
+    observer = new MutationObserver(() => inspect());
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true
+    });
+
+    window.setTimeout(() => inspect(), 120);
+    window.setTimeout(() => inspect(), 500);
+    window.setTimeout(() => inspect(), 1200);
+  });
+}
+
 async function sendPrompt(packet) {
   const site = currentSite() || GENERIC_SITE;
   const message = typeof packet === "string" ? packet : String(packet?.message || "");
   const files = Array.isArray(packet?.files) ? packet.files : Array.isArray(packet?.images) ? packet.images : [];
+  const requestId = String(packet?.requestId || "");
 
   const inputEl = findFirst(site.inputSelectors);
-  if (!inputEl) return;
+  if (!inputEl) {
+    postSendProgress(requestId, site.id, "failed", { reason: "input-not-found" });
+    return;
+  }
+
+  postSendProgress(requestId, site.id, "injecting");
+  const beforeSnapshot = captureSendSnapshot(site, inputEl);
 
   const hasText = message.length > 0;
-  if (hasText && !setInputValue(inputEl, message)) return;
+  if (hasText && !setInputValue(inputEl, message, site.id)) {
+    postSendProgress(requestId, site.id, "failed", { reason: "set-input-failed" });
+    return;
+  }
   if (!hasText) inputEl.focus();
 
   if (files.length) {
@@ -543,10 +825,18 @@ async function sendPrompt(packet) {
   }
 
   await sleep(files.length ? 220 : 80);
-  await clickSendWithRetry(site, inputEl, {
+  const submitted = await clickSendWithRetry(site, inputEl, {
     attempts: files.length ? 20 : 4,
     delay: files.length ? 250 : 100
   });
+  if (!submitted) {
+    postSendProgress(requestId, site.id, "failed", { reason: "submit-failed" });
+    return;
+  }
+
+  postSendProgress(requestId, site.id, "submitted");
+  const acknowledged = await waitForSendAcknowledgement(site, inputEl, message, beforeSnapshot);
+  postSendProgress(requestId, site.id, acknowledged ? "acknowledged" : "timeout");
 }
 
 function newChat() {
@@ -682,7 +972,8 @@ window.addEventListener("message", (event) => {
   if (data.type === "CHAT_MESSAGE") {
     void sendPrompt({
       message: data.message || "",
-      files: data.payload?.files || data.payload?.images || []
+      files: data.payload?.files || data.payload?.images || [],
+      requestId: data.payload?.requestId || ""
     });
   } else if (data.type === "ATTACH_FILES" || data.type === "ATTACH_IMAGES") {
     const site = currentSite() || GENERIC_SITE;
@@ -692,6 +983,19 @@ window.addEventListener("message", (event) => {
     }
   } else if (data.type === "NEW_CHAT") {
     newChat();
+  } else if (data.type === "COLLECT_LAST_RESPONSE") {
+    const site = currentSite() || GENERIC_SITE;
+    window.parent.postMessage(
+      {
+        type: "LAST_RESPONSE",
+        payload: {
+          requestId: String(data.payload?.requestId || ""),
+          siteId: site.id,
+          text: extractLatestResponseText()
+        }
+      },
+      "*"
+    );
   }
 });
 

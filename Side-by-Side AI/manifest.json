@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Side-by-Side AI",
   "description": "Open-source multi-AI split screen with prompt broadcast and local history.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "permissions": [
     "storage",
     "declarativeNetRequest"

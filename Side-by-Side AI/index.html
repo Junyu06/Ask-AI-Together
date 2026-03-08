@@ -13,6 +13,7 @@
     <div id="pane-focus-backdrop" class="panel-backdrop pane-focus-backdrop hidden" aria-hidden="true"></div>
 
     <section id="input-bubble" class="bubble bubble-input" aria-label="输入与操作" data-i18n-aria-label="input_bubble_aria">
+      <p id="send-status" class="send-status hidden" role="status" aria-live="polite"></p>
       <div class="input-row">
         <div class="left-actions" aria-label="工具栏" data-i18n-aria-label="toolbar_aria">
           <button id="site-settings-btn" class="btn btn-icon btn-ghost" type="button" aria-label="设置" title="设置" data-i18n-aria-label="settings_title" data-i18n-title="settings_title">
@@ -20,6 +21,14 @@
           </button>
           <button id="history-btn" class="btn btn-icon btn-ghost" type="button" aria-label="历史记录" title="历史记录" data-i18n-aria-label="history_title" data-i18n-title="history_title">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+          </button>
+          <button id="combine-latest" class="btn btn-icon btn-ghost btn-summary" type="button" aria-label="汇总最新回复" title="汇总最新回复" data-i18n-aria-label="combine_latest" data-i18n-title="combine_latest">
+            <svg class="icon icon-summary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 4.5c1.4 2.9 2.1 3.6 5 5-2.9 1.4-3.6 2.1-5 5-1.4-2.9-2.1-3.6-5-5 2.9-1.4 3.6-2.1 5-5Z"/>
+              <path d="M18.4 14.6c.6 1.2.9 1.5 2.1 2.1-1.2.6-1.5.9-2.1 2.1-.6-1.2-.9-1.5-2.1-2.1 1.2-.6 1.5-.9 2.1-2.1Z"/>
+              <path d="M6 15.8c.5 1 .8 1.2 1.8 1.8-1 .5-1.3.8-1.8 1.8-.5-1-.8-1.3-1.8-1.8 1-.5 1.3-.8 1.8-1.8Z"/>
+            </svg>
+            <span class="visually-hidden" data-i18n="combine_latest">汇总最新回复</span>
           </button>
           <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button" aria-label="新对话" title="新对话" data-i18n-aria-label="new_chat" data-i18n-title="new_chat">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
@@ -174,6 +183,11 @@
               <li class="usage-alert"><span class="usage-alert-text" data-i18n="usage_login_first">先去各 AI 站点登录账号，再使用本 extension。</span></li>
               <li><span class="usage-key"><kbd>@</kbd></span><span data-i18n="usage_shortcut_at">@ 选择单独 AI 作为发送目标</span></li>
               <li><span class="usage-key"><kbd>#</kbd></span><span data-i18n="usage_shortcut_hash"># 选择并放大单个 AI</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.5c1.4 2.9 2.1 3.6 5 5-2.9 1.4-3.6 2.1-5 5-1.4-2.9-2.1-3.6-5-5 2.9-1.4 3.6-2.1 5-5Z"/><path d="M18.4 14.6c.6 1.2.9 1.5 2.1 2.1-1.2.6-1.5.9-2.1 2.1-.6-1.2-.9-1.5-2.1-2.1 1.2-.6 1.5-.9 2.1-2.1Z"/><path d="M6 15.8c.5 1 .8 1.2 1.8 1.8-1 .5-1.3.8-1.8 1.8-.5-1-.8-1.3-1.8-1.8 1-.5 1.3-.8 1.8-1.8Z"/></svg></span><span data-i18n="usage_icon_summary">汇总图标会抓取当前各 AI 最新回复，并整理到输入框里，供你继续写要求。</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span data-i18n="usage_icon_settings">设置图标用于选择站点、布局、语言和历史摘要配置。</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span><span data-i18n="usage_icon_history">历史图标用于查看并恢复之前保存的会话入口。</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span data-i18n="usage_icon_new_chat">新聊天图标会通知当前已打开的站点新建会话。</span></li>
+              <li class="usage-alert"><span class="usage-alert-text" data-i18n="usage_long_text_warning">长文本在部分站点注入时会比较慢，浏览器偶尔出现“未响应”提示属于正常情况，请耐心等待。</span></li>
               <li><span id="usage-shortcut-exit-key" class="usage-key"><kbd>Shift</kbd> + <kbd>Cmd</kbd> + <kbd>F</kbd></span><span data-i18n="usage_shortcut_exit">退出放大</span></li>
               <li><span class="usage-key"><kbd>Enter</kbd></span><span data-i18n="usage_shortcut_send">Enter 发送消息</span></li>
               <li><span class="usage-key"><kbd>Shift</kbd> + <kbd>Enter</kbd></span><span data-i18n="usage_shortcut_newline">Shift + Enter 换行</span></li>
