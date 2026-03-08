@@ -21,6 +21,10 @@
 
 `Ask AI Together` (extension name: `Side-by-Side AI`) helps you send one prompt to multiple AI official sites in parallel and compare answers side by side.
 
+Chrome Web Store:
+
+- <https://chromewebstore.google.com/detail/side-by-side-ai/>
+
 ## Features
 
 - Multi-AI split view with iframe panes
@@ -55,29 +59,21 @@
   <img src="./Side-by-Side%20AI/store-assets/screenshot-3.png" alt="Screenshot 3" width="32%" />
 </p>
 
-## Quick Start
+## Install
+
+Chrome Web Store:
+
+1. Open <https://chromewebstore.google.com/detail/side-by-side-ai/>
+2. Click **Add to Chrome**
+3. Sign in to each supported AI website before using the extension
+
+Load unpacked for local development:
 
 1. Open Chrome extensions page: `chrome://extensions/`
 2. Turn on **Developer mode**
 3. Click **Load unpacked**
 4. Select folder: `Side-by-Side AI`
 5. Click extension icon to open the main page
-
-## Package For Release
-
-Build a Chrome Web Store upload zip from the repo root:
-
-```bash
-./scripts/package-extension.sh
-```
-
-The script reads the version from `Side-by-Side AI/manifest.json` and writes:
-
-```text
-dist/side-by-side-ai-v<version>.zip
-```
-
-The zip is created with `manifest.json` at the archive root so it can be uploaded directly to Chrome Web Store.
 
 ## Project Structure
 
