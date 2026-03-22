@@ -2,10 +2,12 @@
   "manifest_version": 3,
   "name": "Side-by-Side AI",
   "description": "Open-source multi-AI split screen with prompt broadcast and local history.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "permissions": [
     "storage",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "tabs",
+    "windows"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
@@ -31,7 +33,8 @@
   },
   "action": {
     "default_title": "Side-by-Side AI",
-    "default_icon": "store-assets/icon-128.png"
+    "default_icon": "store-assets/icon-128.png",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

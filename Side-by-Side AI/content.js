@@ -724,8 +724,30 @@ async function attachFiles(inputEl, items, siteId = "") {
   return attachByPasteTargets([inputEl, document.activeElement, document.body].filter(Boolean), files);
 }
 
+function notifyExtension(message) {
+  try {
+    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage(message);
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+}
+
 function postSendProgress(requestId, siteId, phase, extra = {}) {
-  if (!requestId || !siteId || window.parent === window) return;
+  if (!requestId || !siteId) return;
+  if (window.parent === window) {
+    notifyExtension({
+      type: "OA_SEND_PROGRESS",
+      payload: {
+        requestId,
+        siteId,
+        phase,
+        ...extra
+      }
+    });
+    return;
+  }
   window.parent.postMessage(
     {
       type: "SEND_PROGRESS",
@@ -895,17 +917,22 @@ function createQuoteButton(rect, text) {
 
   button.addEventListener("click", (event) => {
     event.stopPropagation();
-    window.parent.postMessage(
-      {
-        type: "QUOTE_TEXT",
-        payload: {
-          text,
-          siteId: (currentSite() || GENERIC_SITE).id,
-          url: location.href
-        }
-      },
-      "*"
-    );
+    const payload = {
+      text,
+      siteId: (currentSite() || GENERIC_SITE).id,
+      url: location.href
+    };
+    if (window.parent === window) {
+      notifyExtension({ type: "OA_QUOTE_TEXT", payload });
+    } else {
+      window.parent.postMessage(
+        {
+          type: "QUOTE_TEXT",
+          payload
+        },
+        "*"
+      );
+    }
     removeQuoteButton();
     const selection = window.getSelection();
     selection?.removeAllRanges();
@@ -938,6 +965,10 @@ const showQuoteButton = debounce(() => {
     // Ignore UI-only errors.
   }
 }, 160);
+
+function isTopLevelAiSurface() {
+  return window.parent === window && !!currentSite();
+}
 
 function isExtensionEmbeddedFrame() {
   if (window.parent === window) return false;
@@ -999,6 +1030,31 @@ window.addEventListener("message", (event) => {
   }
 });
 
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || !msg.type) return false;
+  if (msg.type === "OA_RUNTIME_CHAT") {
+    sendPrompt({
+      message: msg.message || "",
+      files: msg.files || [],
+      requestId: msg.requestId || ""
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg.type === "OA_RUNTIME_NEW_CHAT") {
+    newChat();
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (msg.type === "OA_RUNTIME_COLLECT_LAST") {
+    const site = currentSite() || GENERIC_SITE;
+    sendResponse({ ok: true, siteId: site.id, text: extractLatestResponseText() });
+    return false;
+  }
+  return false;
+});
+
 if (isExtensionEmbeddedFrame()) {
   document.addEventListener("mouseup", showQuoteButton);
   document.addEventListener("touchend", showQuoteButton);
@@ -1018,22 +1074,44 @@ if (isExtensionEmbeddedFrame()) {
   window.addEventListener("scroll", removeQuoteButton, true);
 }
 
+if (isTopLevelAiSurface()) {
+  document.addEventListener("mouseup", showQuoteButton);
+  document.addEventListener("touchend", showQuoteButton);
+  document.addEventListener("click", (event) => {
+    if (event.target && event.target.closest(".oa-quote-float-btn")) return;
+    removeQuoteButton();
+  });
+  window.addEventListener("scroll", removeQuoteButton, true);
+}
+
 let lastHref = location.href;
 function postUrlUpdate() {
   const site = currentSite() || GENERIC_SITE;
+  const payload = {
+    siteId: site.id,
+    url: location.href
+  };
+  if (window.parent === window) {
+    notifyExtension({ type: "OA_UPDATE_HISTORY", payload });
+    return;
+  }
   window.parent.postMessage(
     {
       type: "UPDATE_HISTORY",
-      payload: {
-        siteId: site.id,
-        url: location.href
-      }
+      payload
     },
     "*"
   );
 }
 
 if (isExtensionEmbeddedFrame()) {
+  postUrlUpdate();
+  setInterval(() => {
+    if (location.href === lastHref) return;
+    lastHref = location.href;
+    postUrlUpdate();
+  }, 600);
+} else if (isTopLevelAiSurface()) {
   postUrlUpdate();
   setInterval(() => {
     if (location.href === lastHref) return;

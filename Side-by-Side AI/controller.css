@@ -1,0 +1,125 @@
+.controller-page {
+  --controller-pad: 20px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--controller-pad);
+  box-sizing: border-box;
+}
+
+.controller-header {
+  margin-bottom: 24px;
+}
+
+.controller-title {
+  font-size: 1.35rem;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+
+.controller-sub {
+  margin: 0;
+  font-size: 0.92rem;
+  opacity: 0.85;
+  line-height: 1.5;
+}
+
+.controller-section {
+  margin-bottom: 20px;
+}
+
+.controller-h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.controller-site-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.controller-site-row {
+  margin: 0;
+}
+
+.controller-site-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+}
+
+.controller-site-name {
+  font-weight: 600;
+}
+
+.controller-site-url {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+.controller-target-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.controller-chip {
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+}
+
+.controller-chip-ok {
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+}
+
+.controller-chip-miss {
+  background: color-mix(in srgb, #f97316 14%, transparent);
+}
+
+.controller-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.controller-prompt {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.controller-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.controller-toolbar .btn {
+  font-size: 0.92rem;
+}
+
+.controller-send-status {
+  margin-top: 14px;
+  font-size: 0.88rem;
+  min-height: 1.2em;
+  opacity: 0.9;
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>控制器 · 多窗口</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="controller.css" />
+  </head>
+  <body class="controller-page">
+    <header class="controller-header">
+      <h1 class="controller-title">多窗口控制器</h1>
+      <p class="controller-sub">
+        每个 AI 在独立浏览器窗口中打开；下方可平铺、重排与广播同一条提示词。分屏 iframe 视图仍可从扩展弹出菜单打开。
+      </p>
+    </header>
+
+    <section class="controller-section" aria-label="目标站点">
+      <h2 class="controller-h2">目标站点</h2>
+      <ul id="controller-site-list" class="controller-site-list"></ul>
+    </section>
+
+    <section class="controller-section" aria-label="运行状态">
+      <h2 class="controller-h2">窗口状态</h2>
+      <div id="controller-target-status" class="controller-target-status" role="status"></div>
+    </section>
+
+    <section class="controller-section" aria-label="提示词">
+      <label for="controller-prompt" class="controller-label">提示词</label>
+      <textarea
+        id="controller-prompt"
+        class="controller-prompt"
+        rows="5"
+        placeholder="输入后发送到已勾选且已打开窗口的站点…"
+        spellcheck="false"
+      ></textarea>
+    </section>
+
+    <div class="controller-toolbar">
+      <button type="button" class="btn btn-primary" id="controller-open-windows">打开 / 复用窗口</button>
+      <button type="button" class="btn btn-ghost" id="controller-tile">平铺</button>
+      <button type="button" class="btn btn-ghost" id="controller-retile">重排</button>
+      <button type="button" class="btn btn-ghost" id="controller-focus">聚焦首个目标</button>
+      <button type="button" class="btn btn-primary" id="controller-send">发送</button>
+      <button type="button" class="btn btn-ghost" id="controller-new-chat">新对话</button>
+      <button type="button" class="btn btn-ghost" id="controller-refresh">刷新状态</button>
+    </div>
+
+    <p id="controller-send-status" class="controller-send-status" role="status" aria-live="polite"></p>
+
+    <script src="controller.js"></script>
+  </body>
+</html>

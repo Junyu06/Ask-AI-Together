@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ask AI Together</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        min-width: 240px;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .popup-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .popup-actions button {
+        padding: 10px 12px;
+        cursor: pointer;
+        border-radius: 10px;
+        border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+        background: color-mix(in srgb, Canvas 96%, CanvasText 4%);
+        font-size: 14px;
+      }
+      .popup-actions button:hover {
+        filter: brightness(1.03);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="popup-actions">
+      <button type="button" id="open-split">打开分屏视图（iframe）</button>
+      <button type="button" id="open-controller">打开控制器（多窗口）</button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
