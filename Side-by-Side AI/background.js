@@ -18,6 +18,110 @@ const BUILTIN_SITE_URLS = {
   gemini: "https://gemini.google.com/"
 };
 
+/** Hostnames for matching tabs (aligned with content.js SITES) */
+const SITE_HOSTS = {
+  chatgpt: ["chatgpt.com", "chat.openai.com"],
+  deepseek: ["chat.deepseek.com"],
+  kimi: ["kimi.com", "www.kimi.com"],
+  qwen: ["chat.qwen.ai"],
+  doubao: ["doubao.com", "www.doubao.com"],
+  yuanbao: ["yuanbao.tencent.com"],
+  grok: ["grok.com"],
+  claude: ["claude.ai"],
+  gemini: ["gemini.google.com"]
+};
+
+function hostMatchesList(hostname, needles) {
+  const h = String(hostname || "").toLowerCase().replace(/^www\./, "");
+  return needles.some((n) => {
+    const needle = String(n).toLowerCase().replace(/^www\./, "");
+    return h === needle || h.endsWith("." + needle);
+  });
+}
+
+/**
+ * Find an open tab for this AI site (any window). Prefer active tab in matches.
+ */
+async function findTabForAiSite(siteId, siteUrl) {
+  let needles = SITE_HOSTS[siteId];
+  if (!needles) {
+    try {
+      needles = [new URL(String(siteUrl || "").trim()).hostname];
+    } catch (_e) {
+      return null;
+    }
+  }
+  const tabs = await chrome.tabs.query({});
+  const matches = [];
+  for (const tab of tabs) {
+    const raw = tab.url;
+    if (!raw || !/^https?:/i.test(raw)) continue;
+    let host;
+    try {
+      host = new URL(raw).hostname;
+    } catch (_e) {
+      continue;
+    }
+    if (hostMatchesList(host, needles)) {
+      matches.push(tab);
+    }
+  }
+  if (!matches.length) return null;
+  const active = matches.find((t) => t.active);
+  return active || matches[0];
+}
+
+async function syncTargetsFromTabsForSites(siteEntries) {
+  const targets = await loadTargets();
+  const list = Array.isArray(siteEntries) ? siteEntries : [];
+  for (const entry of list) {
+    const siteId = String(entry?.siteId || "");
+    if (!siteId) continue;
+    const url = String(entry?.url || "").trim() || BUILTIN_SITE_URLS[siteId];
+    if (targets[siteId]?.windowId) {
+      try {
+        await chrome.windows.get(targets[siteId].windowId);
+        continue;
+      } catch (_e) {
+        delete targets[siteId];
+      }
+    }
+    const tab = await findTabForAiSite(siteId, url);
+    if (tab?.windowId != null && tab.id != null) {
+      targets[siteId] = { siteId, windowId: tab.windowId, tabId: tab.id, transport: "window" };
+    }
+  }
+  await saveTargets(targets);
+}
+
+/**
+ * If multiple targets share one browser window (tabs in same window), detach extras
+ * so each target has its own window — otherwise tiling only moves one rectangle.
+ */
+async function ensureSeparateWindowsForTargets(siteIds) {
+  const targets = await loadTargets();
+  const ids = Array.isArray(siteIds) ? siteIds : [];
+  const seenWin = new Set();
+  for (const siteId of ids) {
+    const rec = targets[siteId];
+    if (!rec?.tabId || rec.windowId == null) continue;
+    let winId = rec.windowId;
+    if (seenWin.has(winId)) {
+      try {
+        const created = await chrome.windows.create({ tabId: rec.tabId });
+        if (created?.id != null) {
+          winId = created.id;
+          targets[siteId] = { siteId, windowId: winId, tabId: rec.tabId, transport: "window" };
+        }
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    seenWin.add(winId);
+  }
+  await saveTargets(targets);
+}
+
 function openMainPage() {
   chrome.tabs.create({ url: chrome.runtime.getURL(MAIN_PAGE) });
 }
@@ -120,6 +224,12 @@ async function ensureWindowForSite(siteId, url, targets) {
     }
   }
 
+  const found = await findTabForAiSite(siteId, u);
+  if (found?.windowId != null && found.id != null) {
+    targets[siteId] = { siteId, windowId: found.windowId, tabId: found.id, transport: "window" };
+    return targets[siteId];
+  }
+
   const created = await chrome.windows.create({
     url: u,
     focused: false,
@@ -146,9 +256,20 @@ async function openOrReuseWindows(sites) {
   return { ok: true, targets: { ...targets } };
 }
 
-async function applyTile(siteIds, workArea) {
+function siteEntriesFromMessage(msg) {
+  if (Array.isArray(msg.sites) && msg.sites.length) {
+    return msg.sites;
+  }
+  const siteIds = Array.isArray(msg.siteIds) ? msg.siteIds : [];
+  return siteIds.map((id) => ({ siteId: id, url: BUILTIN_SITE_URLS[id] || "" }));
+}
+
+async function applyTile(siteEntries, workArea) {
+  await syncTargetsFromTabsForSites(siteEntries);
+  const siteIds = siteEntries.map((e) => e.siteId);
+  await ensureSeparateWindowsForTargets(siteIds);
   const targets = await loadTargets();
-  const ids = Array.isArray(siteIds) ? siteIds.filter((id) => targets[id]?.windowId) : [];
+  const ids = siteIds.filter((id) => targets[id]?.windowId);
   const n = ids.length;
   if (!n) return { ok: false, reason: "no-windows" };
 
@@ -202,7 +323,10 @@ async function focusTarget(siteId) {
   }
 }
 
-async function sendPromptToTargets(siteIds, message, requestId) {
+async function sendPromptToTargets(siteIds, message, requestId, siteEntries) {
+  if (Array.isArray(siteEntries) && siteEntries.length) {
+    await syncTargetsFromTabsForSites(siteEntries);
+  }
   const targets = await loadTargets();
   const text = String(message || "");
   const rid = String(requestId || "");
@@ -227,7 +351,10 @@ async function sendPromptToTargets(siteIds, message, requestId) {
   return { ok: true };
 }
 
-async function newChatOnTargets(siteIds) {
+async function newChatOnTargets(siteIds, siteEntries) {
+  if (Array.isArray(siteEntries) && siteEntries.length) {
+    await syncTargetsFromTabsForSites(siteEntries);
+  }
   const targets = await loadTargets();
   const ids = Array.isArray(siteIds) ? siteIds : [];
   for (const siteId of ids) {
@@ -242,7 +369,10 @@ async function newChatOnTargets(siteIds) {
   return { ok: true };
 }
 
-async function getState() {
+async function getState(siteEntries) {
+  if (Array.isArray(siteEntries) && siteEntries.length) {
+    await syncTargetsFromTabsForSites(siteEntries);
+  }
   const targets = await loadTargets();
   const copy = { ...targets };
   for (const siteId of Object.keys(copy)) {
@@ -305,7 +435,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "OA_BG_TILE" || msg.type === "OA_BG_RETILE") {
-    applyTile(msg.siteIds, msg.workArea)
+    applyTile(siteEntriesFromMessage(msg), msg.workArea)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
@@ -319,21 +449,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "OA_BG_SEND_PROMPT") {
-    sendPromptToTargets(msg.siteIds, msg.message, msg.requestId)
+    sendPromptToTargets(msg.siteIds, msg.message, msg.requestId, msg.sites)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
   if (msg.type === "OA_BG_NEW_CHAT") {
-    newChatOnTargets(msg.siteIds)
+    newChatOnTargets(msg.siteIds, msg.sites)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
   if (msg.type === "OA_BG_GET_STATE") {
-    getState()
+    getState(msg.sites)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;

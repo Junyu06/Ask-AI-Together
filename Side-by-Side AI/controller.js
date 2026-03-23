@@ -115,8 +115,9 @@ function renderSiteList() {
   });
 }
 
-function selectedSitesPayload() {
-  return selectedSiteIds
+/** 与设置里站点顺序一致，供平铺/绑定/发送顺序使用 */
+function selectedSitesPayloadOrdered() {
+  return selectedSiteIdsOrdered()
     .map((id) => {
       const site = getSiteById(id);
       if (!site) return null;
@@ -133,7 +134,10 @@ function selectedSiteIdsOrdered() {
 }
 
 async function refreshState() {
-  const res = await chrome.runtime.sendMessage({ type: "OA_BG_GET_STATE" });
+  const res = await chrome.runtime.sendMessage({
+    type: "OA_BG_GET_STATE",
+    sites: selectedSitesPayloadOrdered()
+  });
   const targets = res?.targets || {};
   const rows = selectedSiteIdsOrdered().map((siteId) => {
     const site = getSiteById(siteId);
@@ -164,7 +168,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 document.getElementById("controller-open-windows").addEventListener("click", async () => {
-  const sites = selectedSitesPayload();
+  const sites = selectedSitesPayloadOrdered();
   if (!sites.length) {
     setSendStatus("请先勾选至少一个站点。");
     return;
@@ -187,6 +191,7 @@ async function doTile() {
   const res = await chrome.runtime.sendMessage({
     type: "OA_BG_TILE",
     siteIds,
+    sites: selectedSitesPayloadOrdered(),
     workArea: getWorkArea()
   });
   if (!res?.ok) {
@@ -207,11 +212,14 @@ document.getElementById("controller-focus").addEventListener("click", async () =
     setSendStatus("请先勾选站点。");
     return;
   }
-  const st = await chrome.runtime.sendMessage({ type: "OA_BG_GET_STATE" });
+  const st = await chrome.runtime.sendMessage({
+    type: "OA_BG_GET_STATE",
+    sites: selectedSitesPayloadOrdered()
+  });
   const targets = st?.targets || {};
   const target = siteIds.find((id) => targets[id]?.windowId);
   if (!target) {
-    setSendStatus("没有已打开的窗口可聚焦，请先点「打开 / 复用窗口」。");
+    setSendStatus("没有可聚焦的窗口：请先打开对应 AI 页签，或点「打开 / 复用窗口」，再试「刷新状态」。");
     return;
   }
   const res = await chrome.runtime.sendMessage({ type: "OA_BG_FOCUS", siteId: target });
@@ -235,6 +243,7 @@ document.getElementById("controller-send").addEventListener("click", async () =>
   const res = await chrome.runtime.sendMessage({
     type: "OA_BG_SEND_PROMPT",
     siteIds,
+    sites: selectedSitesPayloadOrdered(),
     message,
     requestId
   });
@@ -250,7 +259,11 @@ document.getElementById("controller-new-chat").addEventListener("click", async (
     setSendStatus("请先勾选站点。");
     return;
   }
-  await chrome.runtime.sendMessage({ type: "OA_BG_NEW_CHAT", siteIds });
+  await chrome.runtime.sendMessage({
+    type: "OA_BG_NEW_CHAT",
+    siteIds,
+    sites: selectedSitesPayloadOrdered()
+  });
   setSendStatus("已请求各站点新对话。");
 });
 
