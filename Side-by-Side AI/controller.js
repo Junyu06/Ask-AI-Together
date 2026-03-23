@@ -219,13 +219,15 @@ document.getElementById("controller-open-windows").addEventListener("click", asy
     setSendStatus("请先勾选至少一个站点。");
     return;
   }
+  setSendStatus("正在打开窗口…");
   const res = await chrome.runtime.sendMessage({ type: "OA_BG_OPEN_WINDOWS", sites });
   if (!res?.ok) {
     setSendStatus(`打开失败：${res?.error || "未知错误"}`);
     return;
   }
-  setSendStatus("已打开或复用窗口。");
   await refreshState();
+  setSendStatus("正在按所选布局平铺…");
+  await doTile();
 });
 
 async function doTile() {
