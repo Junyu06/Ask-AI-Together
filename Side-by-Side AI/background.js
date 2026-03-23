@@ -108,7 +108,14 @@ async function ensureSeparateWindowsForTargets(siteIds) {
     let winId = rec.windowId;
     if (seenWin.has(winId)) {
       try {
-        const created = await chrome.windows.create({ tabId: rec.tabId });
+        const prefs = await getWindowPrefs();
+        const created = await chrome.windows.create({
+          tabId: rec.tabId,
+          type: prefs.type,
+          width: prefs.width,
+          height: prefs.height,
+          focused: false
+        });
         if (created?.id != null) {
           winId = created.id;
           targets[siteId] = { siteId, windowId: winId, tabId: rec.tabId, transport: "window" };
@@ -171,15 +178,55 @@ async function saveTargets(targets) {
   await chrome.storage.session.set({ [STORAGE_WINDOW_TARGETS]: targets });
 }
 
+/** minimal = Chrome `popup` window (no tab strip); normal = full browser window */
+async function getWindowPrefs() {
+  const data = await chrome.storage.local.get(["oa_window_chrome_mode"]);
+  const minimal = data.oa_window_chrome_mode !== "normal";
+  return {
+    type: minimal ? "popup" : "normal",
+    width: minimal ? 1180 : 1280,
+    height: minimal ? 840 : 800
+  };
+}
+
 function broadcastToExtensionPages(message) {
   chrome.runtime.sendMessage(message).catch(() => {});
 }
 
-/**
- * Deterministic tiling for 1–4 windows inside workArea.
- * 3-window layout: two on top row, one full-width bottom.
- */
-function tileRects(n, work) {
+function tileRectsHorizontal(n, work) {
+  const { left, top, width, height } = work;
+  const nClamped = Math.min(Math.max(n, 1), 4);
+  const rects = [];
+  const w = Math.floor(width / nClamped);
+  for (let i = 0; i < nClamped; i++) {
+    rects.push({
+      left: left + i * w,
+      top,
+      width: i === nClamped - 1 ? width - i * w : w,
+      height
+    });
+  }
+  return rects;
+}
+
+function tileRectsVertical(n, work) {
+  const { left, top, width, height } = work;
+  const nClamped = Math.min(Math.max(n, 1), 4);
+  const rects = [];
+  const h = Math.floor(height / nClamped);
+  for (let i = 0; i < nClamped; i++) {
+    rects.push({
+      left,
+      top: top + i * h,
+      width,
+      height: i === nClamped - 1 ? height - i * h : h
+    });
+  }
+  return rects;
+}
+
+/** Default layouts (former behavior): 3 = two top + one bottom; 4 = 2×2 */
+function tileRectsAuto(n, work) {
   const { left, top, width, height } = work;
   const rects = [];
   const nClamped = Math.min(Math.max(n, 1), 4);
@@ -206,6 +253,60 @@ function tileRects(n, work) {
   return rects;
 }
 
+function normalizeLayoutPreset(preset, n) {
+  const p = preset || "auto";
+  const nc = Math.min(Math.max(n, 1), 4);
+  if (p === "two-top-one-bottom" && nc !== 3) return "auto";
+  if (p === "one-left-two-right" && nc !== 3) return "auto";
+  if (p === "grid-2x2" && nc !== 4) return "auto";
+  return p;
+}
+
+/**
+ * @param {string} [preset] auto | horizontal | vertical | two-top-one-bottom | one-left-two-right | grid-2x2
+ */
+function tileRects(n, work, preset) {
+  const { left, top, width, height } = work;
+  const nClamped = Math.min(Math.max(n, 1), 4);
+  const p = normalizeLayoutPreset(preset, nClamped);
+
+  if (p === "horizontal") {
+    return tileRectsHorizontal(nClamped, work);
+  }
+  if (p === "vertical") {
+    return tileRectsVertical(nClamped, work);
+  }
+  if (p === "two-top-one-bottom" && nClamped === 3) {
+    const halfW = Math.floor(width / 2);
+    const halfH = Math.floor(height / 2);
+    return [
+      { left, top, width: halfW, height: halfH },
+      { left: left + halfW, top, width: width - halfW, height: halfH },
+      { left, top: top + halfH, width, height: height - halfH }
+    ];
+  }
+  if (p === "one-left-two-right" && nClamped === 3) {
+    const halfW = Math.floor(width / 2);
+    const halfH = Math.floor(height / 2);
+    return [
+      { left, top, width: halfW, height },
+      { left: left + halfW, top, width: width - halfW, height: halfH },
+      { left: left + halfW, top: top + halfH, width: width - halfW, height: height - halfH }
+    ];
+  }
+  if (p === "grid-2x2" && nClamped === 4) {
+    const halfW = Math.floor(width / 2);
+    const halfH = Math.floor(height / 2);
+    return [
+      { left, top, width: halfW, height: halfH },
+      { left: left + halfW, top, width: width - halfW, height: halfH },
+      { left, top: top + halfH, width: halfW, height: height - halfH },
+      { left: left + halfW, top: top + halfH, width: width - halfW, height: height - halfH }
+    ];
+  }
+  return tileRectsAuto(nClamped, work);
+}
+
 async function ensureWindowForSite(siteId, url, targets) {
   const u = String(url || "").trim() || BUILTIN_SITE_URLS[siteId];
   if (!u) throw new Error("missing-url");
@@ -230,12 +331,13 @@ async function ensureWindowForSite(siteId, url, targets) {
     return targets[siteId];
   }
 
+  const prefs = await getWindowPrefs();
   const created = await chrome.windows.create({
     url: u,
     focused: false,
-    type: "normal",
-    width: 1280,
-    height: 800
+    type: prefs.type,
+    width: prefs.width,
+    height: prefs.height
   });
   const tabId = created.tabs?.[0]?.id;
   if (tabId == null) throw new Error("no-tab");
@@ -264,7 +366,7 @@ function siteEntriesFromMessage(msg) {
   return siteIds.map((id) => ({ siteId: id, url: BUILTIN_SITE_URLS[id] || "" }));
 }
 
-async function applyTile(siteEntries, workArea) {
+async function applyTile(siteEntries, workArea, layoutPreset) {
   await syncTargetsFromTabsForSites(siteEntries);
   const siteIds = siteEntries.map((e) => e.siteId);
   await ensureSeparateWindowsForTargets(siteIds);
@@ -287,7 +389,7 @@ async function applyTile(siteEntries, workArea) {
         height: 1080
       };
 
-  const rects = tileRects(Math.min(n, 4), work);
+  const rects = tileRects(Math.min(n, 4), work, layoutPreset || "auto");
   const count = Math.min(n, rects.length);
   for (let i = 0; i < count; i++) {
     const siteId = ids[i];
@@ -435,7 +537,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "OA_BG_TILE" || msg.type === "OA_BG_RETILE") {
-    applyTile(siteEntriesFromMessage(msg), msg.workArea)
+    applyTile(siteEntriesFromMessage(msg), msg.workArea, msg.layoutPreset)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;

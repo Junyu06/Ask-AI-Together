@@ -133,3 +133,35 @@ body.controller-page {
   min-height: 1.2em;
   opacity: 0.9;
 }
+
+.controller-field {
+  margin-bottom: 16px;
+}
+
+.controller-field-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.controller-select {
+  width: 100%;
+  max-width: 520px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  font: inherit;
+  background: Canvas;
+  color: CanvasText;
+}
+
+.controller-hint {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  opacity: 0.82;
+}
+
+.controller-hint code {
+  font-size: 0.9em;
+}

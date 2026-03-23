@@ -3,7 +3,9 @@
 const STORAGE_KEYS = {
   selectedSites: "oa_selected_sites",
   customSites: "oa_custom_sites",
-  siteOrder: "oa_site_order"
+  siteOrder: "oa_site_order",
+  windowChromeMode: "oa_window_chrome_mode",
+  tileLayoutPreset: "oa_tile_layout_preset"
 };
 
 const BUILTIN_SITES = [
@@ -21,6 +23,9 @@ const BUILTIN_SITES = [
 let customSites = [];
 let siteOrder = [];
 let selectedSiteIds = [];
+/** @type {"minimal"|"normal"} */
+let windowChromeMode = "minimal";
+let tileLayoutPreset = "auto";
 
 const siteListEl = document.getElementById("controller-site-list");
 const statusEl = document.getElementById("controller-target-status");
@@ -60,7 +65,9 @@ async function loadStorage() {
   const data = await chrome.storage.local.get([
     STORAGE_KEYS.selectedSites,
     STORAGE_KEYS.customSites,
-    STORAGE_KEYS.siteOrder
+    STORAGE_KEYS.siteOrder,
+    STORAGE_KEYS.windowChromeMode,
+    STORAGE_KEYS.tileLayoutPreset
   ]);
   customSites = Array.isArray(data[STORAGE_KEYS.customSites]) ? data[STORAGE_KEYS.customSites] : [];
   siteOrder = Array.isArray(data[STORAGE_KEYS.siteOrder]) ? data[STORAGE_KEYS.siteOrder] : [];
@@ -69,6 +76,45 @@ async function loadStorage() {
     selectedSiteIds = rawSel.filter((id) => getSiteById(id));
   } else {
     selectedSiteIds = ["chatgpt", "deepseek", "kimi"];
+  }
+  windowChromeMode = data[STORAGE_KEYS.windowChromeMode] === "normal" ? "normal" : "minimal";
+  const rawLayout = String(data[STORAGE_KEYS.tileLayoutPreset] || "auto");
+  const allowed = new Set([
+    "auto",
+    "horizontal",
+    "vertical",
+    "two-top-one-bottom",
+    "one-left-two-right",
+    "grid-2x2"
+  ]);
+  tileLayoutPreset = allowed.has(rawLayout) ? rawLayout : "auto";
+}
+
+function applyPrefsToForm() {
+  const modeEl = document.getElementById("controller-window-mode");
+  const layoutEl = document.getElementById("controller-layout-preset");
+  if (modeEl) modeEl.value = windowChromeMode === "normal" ? "normal" : "minimal";
+  if (layoutEl) layoutEl.value = tileLayoutPreset;
+}
+
+function bindPrefsControls() {
+  const modeEl = document.getElementById("controller-window-mode");
+  const layoutEl = document.getElementById("controller-layout-preset");
+  if (modeEl) {
+    modeEl.addEventListener("change", () => {
+      windowChromeMode = modeEl.value === "normal" ? "normal" : "minimal";
+      chrome.storage.local.set({
+        [STORAGE_KEYS.windowChromeMode]: windowChromeMode
+      });
+    });
+  }
+  if (layoutEl) {
+    layoutEl.addEventListener("change", () => {
+      tileLayoutPreset = layoutEl.value;
+      chrome.storage.local.set({
+        [STORAGE_KEYS.tileLayoutPreset]: tileLayoutPreset
+      });
+    });
   }
 }
 
@@ -188,17 +234,20 @@ async function doTile() {
     setSendStatus("请先勾选站点。");
     return;
   }
+  const layoutEl = document.getElementById("controller-layout-preset");
+  const layoutPreset = layoutEl ? layoutEl.value : tileLayoutPreset;
   const res = await chrome.runtime.sendMessage({
     type: "OA_BG_TILE",
     siteIds,
     sites: selectedSitesPayloadOrdered(),
-    workArea: getWorkArea()
+    workArea: getWorkArea(),
+    layoutPreset
   });
   if (!res?.ok) {
     setSendStatus(`平铺失败：${res?.reason || res?.error || "无可用窗口"}`);
     return;
   }
-  setSendStatus("已按当前屏幕工作区平铺（最多 4 个目标）。");
+  setSendStatus("已按所选布局平铺（最多 4 个目标）。");
   await refreshState();
 }
 
@@ -271,6 +320,8 @@ document.getElementById("controller-refresh").addEventListener("click", () => vo
 
 async function init() {
   await loadStorage();
+  applyPrefsToForm();
+  bindPrefsControls();
   renderSiteList();
   await refreshState();
 }

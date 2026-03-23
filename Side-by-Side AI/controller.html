@@ -15,6 +15,32 @@
       </p>
     </header>
 
+    <section class="controller-section" aria-label="窗口与布局">
+      <h2 class="controller-h2">窗口与布局</h2>
+      <div class="controller-field">
+        <label class="controller-field-label" for="controller-window-mode">新窗口外观</label>
+        <select id="controller-window-mode" class="controller-select">
+          <option value="minimal">极简（无标签栏，接近 kiosk）</option>
+          <option value="normal">标准（完整浏览器窗口与标签栏）</option>
+        </select>
+        <p class="controller-hint">
+          极简使用 Chrome 的 <code>popup</code> 类型窗口，一般不显示标签栏。书签栏仍遵循 Chrome 全局设置（可在 chrome://settings/appearance 关闭「显示书签栏」）。
+        </p>
+      </div>
+      <div class="controller-field">
+        <label class="controller-field-label" for="controller-layout-preset">平铺布局</label>
+        <select id="controller-layout-preset" class="controller-select">
+          <option value="auto">自动（按数量：2 左右分、3 上二下一、4 田字格）</option>
+          <option value="horizontal">横排均分（所有窗口单行等高）</option>
+          <option value="vertical">竖排均分（所有窗口单列等宽）</option>
+          <option value="two-top-one-bottom">三窗专用：上二下一</option>
+          <option value="one-left-two-right">三窗专用：左一、右侧上下二</option>
+          <option value="grid-2x2">四窗专用：2×2 田字</option>
+        </select>
+        <p class="controller-hint">与当前勾选数量不符的选项会自动回退为「自动」。外观切换仅作用于<strong>新打开</strong>或<strong>平铺时拆分</strong>出来的窗口。</p>
+      </div>
+    </section>
+
     <section class="controller-section" aria-label="目标站点">
       <h2 class="controller-h2">目标站点</h2>
       <ul id="controller-site-list" class="controller-site-list"></ul>
