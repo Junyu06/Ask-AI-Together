@@ -1,8 +1,13 @@
-.controller-page {
+/* 分屏页 styles.css 里 body 使用 overflow:hidden；控制器页必须可滚动，否则工具栏会被裁在视口外 */
+body.controller-page {
   --controller-pad: 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100vh;
   max-width: 960px;
   margin: 0 auto;
   padding: var(--controller-pad);
+  padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 }
 
@@ -110,7 +115,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 0;
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  background: color-mix(in srgb, Canvas 92%, CanvasText 8%);
 }
 
 .controller-toolbar .btn {
