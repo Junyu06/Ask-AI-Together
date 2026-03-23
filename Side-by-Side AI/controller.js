@@ -320,6 +320,11 @@ document.getElementById("controller-new-chat").addEventListener("click", async (
 
 document.getElementById("controller-refresh").addEventListener("click", () => void refreshState());
 
+document.getElementById("controller-open-switcher").addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "OA_BG_OPEN_SWITCHER" });
+  setSendStatus("已请求打开常驻切换小窗（可拖到角落，关闭即退出）。");
+});
+
 async function init() {
   await loadStorage();
   applyPrefsToForm();

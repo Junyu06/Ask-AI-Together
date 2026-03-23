@@ -1,5 +1,6 @@
 const MAIN_PAGE = "index.html";
 const CONTROLLER_PAGE = "controller.html";
+const SWITCHER_PAGE = "switcher.html";
 
 const STORAGE_WINDOW_TARGETS = "oa_window_targets_v1";
 
@@ -135,6 +136,16 @@ function openMainPage() {
 
 function openControllerPage() {
   chrome.tabs.create({ url: chrome.runtime.getURL(CONTROLLER_PAGE) });
+}
+
+function openSwitcherWindow() {
+  chrome.windows.create({
+    url: chrome.runtime.getURL(SWITCHER_PAGE),
+    type: "popup",
+    width: 300,
+    height: 480,
+    focused: true
+  });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -604,6 +615,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "OA_BG_OPEN_CONTROLLER") {
     openControllerPage();
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (msg.type === "OA_BG_OPEN_SWITCHER") {
+    openSwitcherWindow();
     sendResponse({ ok: true });
     return false;
   }
