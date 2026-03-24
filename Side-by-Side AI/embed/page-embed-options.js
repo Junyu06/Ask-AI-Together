@@ -174,20 +174,57 @@ let rootEl = null;
 let embedIframe = null;
 let dockEl = null;
 
-/** 合并同一 tick 的多条 postMessage；首次 iframe load 前只排队，避免重复 load 监听触发多次 new-chat */
+/** 合并同一 tick 的多条 postMessage；首次 iframe UI ready 前只排队，避免初次点击丢 invoke。 */
 let embedMsgPending = [];
 let embedMsgFlushScheduled = false;
 let embedIframeReady = false;
+let embedContextValid = true;
+
+function markEmbedContextInvalid() {
+  embedContextValid = false;
+  try {
+    dockEl?.remove();
+  } catch (_e) {
+    /* ignore */
+  }
+  try {
+    rootEl?.remove();
+  } catch (_e) {
+    /* ignore */
+  }
+  dockEl = null;
+  rootEl = null;
+  embedIframe = null;
+  embedIframeReady = false;
+  embedMsgPending = [];
+}
+
+function isExtensionContextInvalidError(err) {
+  return String(err?.message || err || "").includes("Extension context invalidated");
+}
 
 function getOptionsEmbedUrl() {
-  return `${chrome.runtime.getURL("ui/options/options.html")}?embed=1`;
+  if (!embedContextValid) return "";
+  try {
+    return `${chrome.runtime.getURL("ui/options/options.html")}?embed=1`;
+  } catch (err) {
+    if (isExtensionContextInvalidError(err)) {
+      markEmbedContextInvalid();
+      return "";
+    }
+    throw err;
+  }
 }
 
 function postToEmbed(payload) {
+  if (!embedContextValid) return;
   try {
     embedIframe?.contentWindow?.postMessage({ ...payload, source: "oa-page-embed" }, "*");
-  } catch (_e) {
-    /* ignore */
+  } catch (err) {
+    if (isExtensionContextInvalidError(err)) {
+      markEmbedContextInvalid();
+      return;
+    }
   }
 }
 
@@ -215,6 +252,7 @@ function flushEmbedPendingBatch() {
 }
 
 function flushEmbedMessage(payload) {
+  if (!embedContextValid) return;
   if (!embedIframe) return;
   embedMsgPending.push(payload);
   if (!embedIframeReady) return;
@@ -229,6 +267,7 @@ function setHostHistoryMode(on) {
 }
 
 function openEmbedPanel() {
+  if (!embedContextValid) return;
   injectEmbedStyles();
   if (!rootEl) {
     embedIframeReady = false;
@@ -238,15 +277,16 @@ function openEmbedPanel() {
     rootEl.setAttribute("aria-label", "Side-by-Side AI");
 
     const iframe = document.createElement("iframe");
-    iframe.src = getOptionsEmbedUrl();
+    const url = getOptionsEmbedUrl();
+    if (!url) return;
+    iframe.src = url;
     iframe.setAttribute("allow", "clipboard-read; clipboard-write");
     iframe.title = "Side-by-Side AI";
     embedIframe = iframe;
     iframe.addEventListener(
       "load",
       () => {
-        embedIframeReady = true;
-        flushEmbedPendingBatch();
+        /* 仅表示文档已加载；真正可收消息要等 options 页脚本显式发 READY。 */
       },
       { once: true }
     );
@@ -366,11 +406,21 @@ function ensureDock() {
 }
 
 async function isEmbedEnabledInStorage() {
-  const data = await chrome.storage.local.get([STORAGE_EMBED_ENABLED]);
-  return data[STORAGE_EMBED_ENABLED] !== false;
+  if (!embedContextValid) return false;
+  try {
+    const data = await chrome.storage.local.get([STORAGE_EMBED_ENABLED]);
+    return data[STORAGE_EMBED_ENABLED] !== false;
+  } catch (err) {
+    if (isExtensionContextInvalidError(err)) {
+      markEmbedContextInvalid();
+      return false;
+    }
+    throw err;
+  }
 }
 
 async function boot() {
+  if (!embedContextValid) return;
   if (window.self !== window.top) return;
   if (!hostMatchesEmbed(location.hostname)) return;
   if (!(await isEmbedEnabledInStorage())) return;
@@ -378,6 +428,11 @@ async function boot() {
 }
 
 window.addEventListener("message", (ev) => {
+  if (ev.source === embedIframe?.contentWindow && ev.data?.type === "OA_EMBED_READY" && ev.data?.source === "oa-options-embed") {
+    embedIframeReady = true;
+    flushEmbedPendingBatch();
+    return;
+  }
   if (ev.data?.type === "OA_EMBED_CLOSE" && ev.data?.source === "oa-options-embed") {
     closeEmbedPanel();
   }
@@ -390,6 +445,10 @@ document.addEventListener("keydown", (e) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!embedContextValid) {
+    sendResponse?.({ ok: false, reason: "context-invalidated" });
+    return false;
+  }
   if (!msg || msg.type !== "OA_PAGE_EMBED_OPEN_SWITCHER") return false;
   void (async () => {
     if (!hostMatchesEmbed(location.hostname) || !(await isEmbedEnabledInStorage())) {

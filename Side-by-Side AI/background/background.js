@@ -9,6 +9,12 @@ importScripts(
   "bg-actions.js"
 );
 
+function getMessageOrigin(sender) {
+  const windowId = Number.isInteger(sender?.tab?.windowId) ? sender.tab.windowId : null;
+  const tabId = Number.isInteger(sender?.tab?.id) ? sender.tab.id : null;
+  return { windowId, tabId };
+}
+
 function ensureToolbarClickRunsTilingOnly() {
   try {
     chrome.action.setPopup({ popup: "" });
@@ -96,7 +102,17 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
 
-  if (msg.type === "OA_SEND_PROGRESS" || msg.type === "OA_UPDATE_HISTORY" || msg.type === "OA_QUOTE_TEXT") {
+  if (msg.type === "OA_SEND_PROGRESS" || msg.type === "OA_QUOTE_TEXT") {
+    if (sender.tab) {
+      broadcastToExtensionPages(msg);
+    }
+    return false;
+  }
+
+  if (msg.type === "OA_UPDATE_HISTORY") {
+    const siteId = String(msg.payload?.siteId || "");
+    const url = String(msg.payload?.url || "");
+    patchRecentHistoryUrl(siteId, url).catch(() => {});
     if (sender.tab) {
       broadcastToExtensionPages(msg);
     }
@@ -139,7 +155,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "OA_BG_NEW_CHAT") {
-    newChatOnTargets(msg.siteIds, msg.sites)
+    newChatOnTargets(msg.siteIds, msg.sites, getMessageOrigin(sender))
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
@@ -160,7 +176,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "OA_BG_RESTORE_HISTORY_URLS") {
-    restoreHistoryUrlsToTargets(msg.urls, msg.sites)
+    restoreHistoryUrlsToTargets(msg.urls, msg.sites, getMessageOrigin(sender))
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;

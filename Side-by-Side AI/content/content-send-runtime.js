@@ -142,13 +142,18 @@ function newChat() {
   const site = currentSite();
   if (!site) return;
 
+  const targetUrl = String(site.newChatUrl || site.homeUrl || `${location.origin}/`).trim();
+  if (targetUrl) {
+    if (location.href === targetUrl) {
+      location.reload();
+      return;
+    }
+    location.href = targetUrl;
+    return;
+  }
+
   if (clickFirstVisible(site.newChatSelectors || [])) return;
   if (clickByText()) return;
 
-  const targetUrl = site.homeUrl || `${location.origin}/`;
-  if (location.href === targetUrl) {
-    location.reload();
-    return;
-  }
-  location.href = targetUrl;
+  location.href = site.homeUrl || `${location.origin}/`;
 }

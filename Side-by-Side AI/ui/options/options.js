@@ -51,6 +51,18 @@ function buildCombinedLatestPrompt(sections, existingPrompt = "") {
   return `${body}\n\n---------\n\n${footer}`.trim();
 }
 
+function buildSiteEntriesFromHistoryUrls(urls) {
+  const entries = [];
+  if (!urls || typeof urls !== "object") return entries;
+  for (const [siteId, url] of Object.entries(urls)) {
+    const cleanSiteId = String(siteId || "").trim();
+    const cleanUrl = String(url || "").trim();
+    if (!cleanSiteId || !/^https?:\/\//i.test(cleanUrl)) continue;
+    entries.push({ siteId: cleanSiteId, url: cleanUrl });
+  }
+  return entries;
+}
+
 async function applyOptionsTheme() {
   const data = await chrome.storage.local.get(["oa_theme_mode"]);
   let mode = data.oa_theme_mode || "system";
@@ -122,7 +134,7 @@ async function renderHistoryPanel() {
       body.title = "点击：已绑定的各站点标签页会打开对应 URL";
       body.addEventListener("click", async () => {
         setSendStatus("正在恢复各站点页面…");
-        const sites = await loadOrderedSelectedSitesPayload();
+        const sites = buildSiteEntriesFromHistoryUrls(urls);
         const res = await chrome.runtime.sendMessage({
           type: "OA_BG_RESTORE_HISTORY_URLS",
           urls,
@@ -181,6 +193,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         else if (action === "combine-latest") document.getElementById("combine-latest")?.click();
       }
     });
+
+    try {
+      window.parent.postMessage({ type: "OA_EMBED_READY", source: "oa-options-embed" }, "*");
+    } catch (_e) {
+      /* ignore */
+    }
   }
 
   const embedToggle = document.getElementById("page-embed-fab-toggle");
