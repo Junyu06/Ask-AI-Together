@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Side-by-Side AI",
   "description": "Multi-AI prompt broadcast with multi-window tiling and local session history.",
-  "version": "0.4.6",
+  "version": "0.4.9",
   "permissions": [
     "storage",
     "declarativeNetRequest",
@@ -32,9 +32,12 @@
     "128": "store-assets/icon-128.png"
   },
   "action": {
-    "default_title": "Side-by-Side AI",
-    "default_icon": "store-assets/icon-128.png",
-    "default_popup": "ui/popup/popup.html"
+    "default_title": "Side-by-Side AI — 侧栏 / 平铺",
+    "default_icon": "store-assets/icon-128.png"
+  },
+  "options_ui": {
+    "page": "ui/options/options.html",
+    "open_in_tab": true
   },
   "content_scripts": [
     {
@@ -56,10 +59,21 @@
     },
     {
       "matches": [
-        "<all_urls>"
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://chat.deepseek.com/*",
+        "https://www.kimi.com/*",
+        "https://kimi.com/*",
+        "https://chat.qwen.ai/*",
+        "https://www.doubao.com/*",
+        "https://doubao.com/*",
+        "https://yuanbao.tencent.com/*",
+        "https://grok.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
       ],
       "js": [
-        "embed/page-switcher-embed.js"
+        "embed/page-embed-options.js"
       ],
       "all_frames": false,
       "run_at": "document_idle"
@@ -68,11 +82,13 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "ui/switcher/switcher.html",
+        "ui/options/options.html",
+        "ui/options/options.js",
+        "ui/options/options.css",
         "assets/styles.css",
         "assets/quick-focus.js",
-        "assets/switcher-pip.js",
-        "ui/switcher/switcher.js"
+        "assets/options-settings.js",
+        "ui/controller/controller.css"
       ],
       "matches": [
         "<all_urls>"

@@ -1,0 +1,192 @@
+/* 扩展选项页：可滚动全页，覆盖 styles.css 里 body { overflow: hidden } */
+body.options-page {
+  overflow: auto;
+  min-height: 100vh;
+}
+
+.options-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.options-header-top h1 {
+  margin: 0;
+}
+
+.options-embed-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+  user-select: none;
+}
+
+.options-embed-toggle input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.options-intro {
+  margin: 0 0 20px;
+}
+
+body.options-page.options-embed .options-wrap {
+  padding: 12px 14px 24px;
+  max-width: none;
+}
+
+body.options-page.options-embed .options-intro,
+body.options-page.options-embed .options-embed-toggle {
+  display: none;
+}
+
+body.options-page.options-embed .opt-section h2 {
+  font-size: 0.95rem;
+}
+
+.options-wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 20px 20px 48px;
+}
+
+.options-header h1 {
+  font-size: 1.35rem;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+
+.options-header p {
+  margin: 0 0 20px;
+  font-size: 0.92rem;
+  opacity: 0.85;
+  line-height: 1.5;
+}
+
+.opt-section {
+  margin-bottom: 28px;
+}
+
+.opt-section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.opt-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+#opt-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#opt-targets .qf-btn.qf-chip {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: color-mix(in srgb, Canvas 96%, CanvasText 4%);
+  font-size: 13px;
+}
+
+.history-list-opt {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+}
+
+.history-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  box-sizing: border-box;
+}
+
+.history-row:last-child {
+  border-bottom: none;
+}
+
+.history-row-body {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.history-row-body.is-clickable {
+  cursor: pointer;
+}
+
+.history-row-prompt {
+  font-size: 13px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.history-row-meta {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 4px;
+}
+
+.history-row-del {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--accent, #2563eb);
+  text-decoration: underline;
+}
+
+.history-empty {
+  padding: 16px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+/* 选项页内输入气泡：非 fixed */
+body.options-page .bubble.opt-bubble {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  padding: 12px;
+}
+
+body.options-page .bubble.opt-bubble::before {
+  display: none;
+}
+
+body.options-page .bubble.opt-bubble .drag-ring {
+  display: none;
+}
+
+.settings-panel-inner.options-settings-scroll .controller-site-list {
+  max-height: 220px;
+}

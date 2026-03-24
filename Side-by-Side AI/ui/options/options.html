@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Side-by-Side AI — 选项</title>
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <link rel="stylesheet" href="../controller/controller.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body class="options-page controller-page">
+    <div class="options-wrap">
+      <header class="options-header">
+        <div class="options-header-top">
+          <h1>Side-by-Side AI</h1>
+          <button type="button" id="opt-embed-close" class="btn btn-ghost" hidden>关闭侧栏</button>
+        </div>
+        <label class="options-embed-toggle">
+          <input type="checkbox" id="page-embed-fab-toggle" />
+          <span>在支持的 AI 网页右侧显示吸边侧栏按钮（可随时关掉）</span>
+        </label>
+        <p class="options-intro">
+          在此配置勾选站点、平铺布局与广播提示词。在 AI 网页上可点右侧竖条打开本页侧栏；点击浏览器工具栏扩展图标将<strong>优先打开侧栏</strong>（若在 AI 页），否则<strong>平铺已勾选的 AI 窗口</strong>。
+        </p>
+      </header>
+
+      <section class="opt-section" aria-label="广播">
+        <h2>广播提示词</h2>
+        <section id="input-bubble" class="bubble bubble-input opt-bubble" aria-label="输入与操作">
+          <p id="send-status" class="send-status hidden" role="status" aria-live="polite"></p>
+          <div class="input-row">
+            <div class="left-actions" aria-label="操作">
+              <button id="combine-latest" class="btn btn-icon btn-ghost btn-summary" type="button" title="汇总最新回复">
+                <svg class="icon icon-summary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
+                  <path d="M12 4.5c1.4 2.9 2.1 3.6 5 5-2.9 1.4-3.6 2.1-5 5-1.4-2.9-2.1-3.6-5-5 2.9-1.4 3.6-2.1 5-5Z" />
+                </svg>
+              </button>
+              <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button">新聊天</button>
+            </div>
+            <div class="prompt-wrap">
+              <label for="prompt" class="visually-hidden">输入问题</label>
+              <textarea
+                id="prompt"
+                name="prompt"
+                autocomplete="off"
+                placeholder="输入问题；回车发送（Shift+Enter 换行）"
+                rows="3"
+                aria-label="输入问题"
+              ></textarea>
+            </div>
+            <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送">发送</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="opt-section" aria-label="快速聚焦">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+          <h2 style="margin: 0">快速聚焦已绑定窗口</h2>
+          <button type="button" class="btn btn-ghost" id="opt-refresh-focus">刷新列表</button>
+        </div>
+        <div id="opt-targets" aria-live="polite"></div>
+      </section>
+
+      <section class="opt-section" aria-label="发送历史">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+          <h2 style="margin: 0">发送历史</h2>
+          <button type="button" class="btn btn-ghost" id="history-clear-all">清空</button>
+        </div>
+        <ul id="history-panel-list" class="history-list-opt"></ul>
+      </section>
+
+      <section class="opt-section controller-section" aria-label="窗口与站点">
+        <div class="settings-panel-inner options-settings-scroll" aria-label="窗口与站点">
+          <section class="controller-section" aria-label="窗口与布局">
+            <h2 class="controller-h2">窗口与布局</h2>
+            <div class="controller-field">
+              <label class="controller-field-label" for="sw-window-mode">新窗口外观</label>
+              <select id="sw-window-mode" class="controller-select">
+                <option value="minimal">极简（无标签栏）</option>
+                <option value="normal">标准（完整窗口）</option>
+              </select>
+              <p class="controller-hint">仅影响新打开或平铺拆分的窗口。</p>
+            </div>
+            <div class="controller-field">
+              <label class="controller-field-label" for="sw-layout-preset">平铺布局</label>
+              <select id="sw-layout-preset" class="controller-select">
+                <option value="auto">自动</option>
+                <option value="horizontal">横排均分</option>
+                <option value="vertical">竖排均分</option>
+                <option value="two-top-one-bottom">三窗：上二下一</option>
+                <option value="one-left-two-right">三窗：左一右二</option>
+                <option value="grid-2x2">四窗：2×2</option>
+              </select>
+            </div>
+          </section>
+          <section class="controller-section" aria-label="目标站点">
+            <h2 class="controller-h2">发送目标（勾选）</h2>
+            <ul id="sw-site-list" class="controller-site-list"></ul>
+          </section>
+          <section class="controller-section" aria-label="运行状态">
+            <h2 class="controller-h2">窗口状态</h2>
+            <div id="sw-target-status" class="controller-target-status" role="status"></div>
+          </section>
+          <section class="controller-section controller-actions" aria-label="操作">
+            <div class="controller-toolbar" role="toolbar">
+              <button type="button" class="btn btn-primary" id="sw-open-windows">打开 / 复用窗口</button>
+              <button type="button" class="btn btn-ghost" id="sw-tile">平铺</button>
+              <button type="button" class="btn btn-ghost" id="sw-retile">重排</button>
+              <button type="button" class="btn btn-ghost" id="sw-focus">聚焦首个</button>
+              <button type="button" class="btn btn-ghost" id="sw-refresh">刷新状态</button>
+            </div>
+            <p id="sw-panel-status" class="controller-send-status" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script src="../../assets/quick-focus.js"></script>
+    <script src="../../assets/options-settings.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

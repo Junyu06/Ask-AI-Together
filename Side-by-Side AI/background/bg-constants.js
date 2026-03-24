@@ -1,7 +1,16 @@
 "use strict";
 
-const CONTROLLER_PAGE = "ui/controller/controller.html";
-const SWITCHER_PAGE = "ui/switcher/switcher.html";
+const OPTIONS_PAGE = "ui/options/options.html";
+
+const STALE_EXTENSION_UI_PATHS = ["ui/switcher/switcher.html", "ui/popup/popup.html"];
+
+function isStaleExtensionUiUrl(url) {
+  if (typeof url !== "string" || !url.startsWith("chrome-extension://")) return false;
+  return STALE_EXTENSION_UI_PATHS.some((path) => {
+    const full = chrome.runtime.getURL(path);
+    return url === full || url.startsWith(`${full}?`);
+  });
+}
 
 const STORAGE_WINDOW_TARGETS = "oa_window_targets_v1";
 

@@ -170,7 +170,11 @@ async function ensureWindowForSite(siteId, url, targets, focusLast = false) {
   return targets[siteId];
 }
 
-async function openOrReuseWindows(sites) {
+/**
+ * @param {Array<{ siteId: string, url?: string }>} sites
+ * @param {{ skipFocusChain?: boolean }} [options] 为 true 时不做「依次聚焦各 AI 再聚焦切换器」（供工具栏一键打开后直接平铺）。
+ */
+async function openOrReuseWindows(sites, options) {
   const targets = await loadTargets();
   const list = Array.isArray(sites) ? sites : [];
   const entries = list.filter((e) => String(e?.siteId || ""));
@@ -181,7 +185,9 @@ async function openOrReuseWindows(sites) {
     await ensureWindowForSite(siteId, url, targets, false);
   }
   await saveTargets(targets);
-  await focusOpenedTargetsThenSwitcher(entries.map((e) => e.siteId));
+  if (!options?.skipFocusChain) {
+    await focusOpenedTargetsThenSwitcher(entries.map((e) => e.siteId));
+  }
   return { ok: true, targets: { ...targets } };
 }
 

@@ -9,7 +9,34 @@ importScripts(
   "bg-actions.js"
 );
 
+function ensureToolbarClickRunsTilingOnly() {
+  try {
+    chrome.action.setPopup({ popup: "" });
+  } catch (_e) {
+    /* ignore */
+  }
+}
+
+/** 将仍指向已删除扩展页的标签重定向到选项页（避免 ERR_FILE_NOT_FOUND 与误聚焦）。 */
+function redirectStaleExtensionUiTabs() {
+  const target = chrome.runtime.getURL(OPTIONS_PAGE);
+  chrome.tabs.query({}).then((tabs) => {
+    for (const t of tabs) {
+      const u = t.url || "";
+      if (t.id != null && isStaleExtensionUiUrl(u)) {
+        chrome.tabs.update(t.id, { url: target }).catch(() => {});
+      }
+    }
+  }).catch(() => {});
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  void openSwitcherFromToolbarAction(tab);
+});
+
 chrome.runtime.onInstalled.addListener(() => {
+  ensureToolbarClickRunsTilingOnly();
+  redirectStaleExtensionUiTabs();
   chrome.declarativeNetRequest.updateDynamicRules(
     {
       removeRuleIds: [9001],
@@ -35,6 +62,11 @@ chrome.runtime.onInstalled.addListener(() => {
     },
     () => void chrome.runtime.lastError
   );
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureToolbarClickRunsTilingOnly();
+  redirectStaleExtensionUiTabs();
 });
 
 chrome.windows.onRemoved.addListener(async (windowId) => {
@@ -120,14 +152,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "OA_BG_OPEN_CONTROLLER") {
-    openControllerPage();
-    sendResponse({ ok: true });
-    return false;
-  }
-
-  if (msg.type === "OA_BG_OPEN_SWITCHER") {
-    openSwitcherWindow()
+  if (msg.type === "OA_BG_OPEN_CONTROLLER" || msg.type === "OA_BG_OPEN_SWITCHER") {
+    openSelectedAisTiled()
       .then(() => sendResponse({ ok: true }))
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;

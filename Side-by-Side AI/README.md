@@ -2,6 +2,8 @@
 
 多站点 AI 聊天页的**统一广播提示词**、**多窗口平铺**与**本地会话历史**。Manifest V3。
 
+**已无**独立 `switcher.html` 与画中画；广播与站点配置在 **扩展选项页**。在支持的 AI 网页上，**右侧吸边竖条「AI」**可打开 **iframe 侧栏**（同选项页 `?embed=1`）；也可在完整选项页里关闭吸边按钮。
+
 ## 目录结构（按职责）
 
 扩展根目录仅保留 `manifest.json`、说明文档与资源入口；源码按常见扩展习惯分层：
@@ -10,9 +12,9 @@
 |------|------|
 | `background/` | Service Worker：`background.js` + `importScripts` 加载的 `bg-*.js`（窗口/标签/平铺/消息路由）。 |
 | `content/` | 注入 AI 网页的主 content scripts（顺序见下表，路径在 `manifest.json` 中写死）。 |
-| `embed/` | 独立注入的 content script（`page-switcher-embed.js`，页面内嵌切换器）。 |
-| `ui/` | 扩展页面：弹窗、全页控制器、常驻切换条、历史页；各子目录自包含 HTML/CSS/JS。 |
-| `assets/` | 多页面共享的样式与脚本（`styles.css`、`quick-focus.js`、`switcher-pip.js`）。 |
+| `embed/` | `page-embed-options.js`：仅在主框架、白名单 AI 域名上注入吸边按钮与侧栏 iframe（需 `web_accessible_resources`）。 |
+| `ui/` | 扩展选项页 `ui/options/`（广播、历史、站点与平铺设置）。 |
+| `assets/` | 多页面共享的样式与脚本（`styles.css`、`quick-focus.js`、`options-settings.js` 等）。 |
 | `store-assets/` | 商店/工具栏图标（见 `manifest.json`）。 |
 
 **给后续 coding agent 的约定**
@@ -20,7 +22,7 @@
 - 单文件尽量 **≤700 行**；逻辑按职责拆文件，不要随意把无关代码合并进同一文件。
 - `manifest.json` 里 **content_scripts 顺序**与**background 的 `importScripts` 顺序**敏感；后加载依赖先加载的全局符号。
 - 修改站点选择器时，同时检查 `content/content-sites.js` 的 `SITES` / `RESPONSE_SELECTORS` 与 `background/bg-constants.js` 的 `SITE_HOSTS` / `BUILTIN_SITE_URLS` 是否一致。
-- 扩展内页面路径一律相对 **扩展根目录**（如 `ui/controller/controller.html`），`chrome.runtime.getURL(...)` 与 `manifest` 的 `web_accessible_resources` 需同步更新。
+- 扩展内页面路径一律相对 **扩展根目录**（如 `ui/options/options.html`）。iframe 侧栏需将选项页与依赖的 `assets/`、`ui/controller/controller.css` 列入 `web_accessible_resources`。
 
 ---
 
@@ -28,7 +30,7 @@
 
 | 文件 | 作用 |
 |------|------|
-| `manifest.json` | MV3：权限、`background/background.js`、`content_scripts`、可网页访问资源。 |
+| `manifest.json` | MV3：权限、`background/background.js`、两段 `content_scripts`（全站注入 + AI 站注入 embed）、`options_ui`、`web_accessible_resources`（供网页内 iframe 加载选项页）。`action` **不设 `default_popup`**：在 AI 页点击工具栏图标**优先**打开侧栏（`OA_PAGE_EMBED_OPEN_SWITCHER`），否则按勾选**平铺**。 |
 
 ---
 
@@ -38,14 +40,14 @@
 
 | 文件 | 作用 |
 |------|------|
-| `background/bg-constants.js` | 扩展内页面路径、会话存储键、`targetsCache`、各站默认 URL / 展示名 / hostname 列表。 |
+| `background/bg-constants.js` | 会话存储键、`targetsCache`、各站默认 URL / 展示名 / hostname 列表。 |
 | `background/bg-session.js` | `loadTargets` / `saveTargets`、`getWindowPrefs`。 |
 | `background/bg-tabs.js` | 按 hostname 查找已打开 AI 标签、`syncTargetsFromTabsForSites`、`ensureSeparateWindowsForTargets`。 |
-| `background/bg-switcher.js` | 打开控制器页、打开常驻「切换」小窗、`alwaysOnTop` 补偿、聚焦 AI 窗口链与切换窗。 |
+| `background/bg-switcher.js` | `chrome.action.onClicked`、`openSwitcherFromToolbarAction`（先尝试页内嵌侧栏消息，再 `openSelectedAisTiled`）、`loadOrderedSelectedSitesFromStorage`、`focusOpenedTargetsThenSwitcher`。 |
 | `background/bg-tiling.js` | 工作区矩形计算、`ensureWindowForSite`、`openOrReuseWindows`、`applyTile`、`broadcastToExtensionPages`。 |
 | `background/bg-actions.js` | `focusTarget`、`appendHistoryAfterSend`、`sendPromptToTargets`、`collectLastFromTargets`、`newChatOnTargets`、`restoreHistoryUrlsToTargets`、`getState`。 |
 
-**消息类型（节选）**：自 content 经 background 转发 `OA_SEND_PROGRESS`、`OA_UPDATE_HISTORY`、`OA_QUOTE_TEXT`；自 UI 发往 background：`OA_BG_*`（详见 `background/background.js` 内分支）。
+**消息类型（节选）**：自 content 经 background 转发 `OA_SEND_PROGRESS`、`OA_UPDATE_HISTORY`、`OA_QUOTE_TEXT`；自 UI（选项页）发往 background：`OA_BG_*`（详见 `background/background.js` 内分支）。
 
 ---
 
@@ -67,22 +69,20 @@
 
 ---
 
-## 嵌入与其它脚本
+## 网页内吸边侧栏（`embed/`）
 
 | 文件 | 作用 |
 |------|------|
-| `embed/page-switcher-embed.js` | 第二段 content script（`all_frames: false`）：吸边按钮，iframe 打开 `ui/switcher/switcher.html`。 |
+| `embed/page-embed-options.js` | 主框架、`all_frames: false`：在匹配域名的 AI 页右侧显示「AI」竖条；点击展开 iframe，加载 `ui/options/options.html?embed=1`；处理 `OA_PAGE_EMBED_OPEN_SWITCHER`（工具栏联动）。 |
 
 ---
 
-## UI 页面（`ui/`）
+## UI（扩展选项页）
 
 | 路径 | 作用 |
 |------|------|
-| `ui/popup/popup.html` + `popup.js` | 工具栏弹窗：快速聚焦、打开切换器/控制器。 |
-| `ui/controller/controller.html` + `controller.js` + `controller.css` | 全页多窗口控制器（`OA_BG_*`）。 |
-| `ui/switcher/switcher.html` + `switcher.js` | 常驻输入条 / 切换器（引用 `assets/` 下脚本与样式）。 |
-| `ui/history/history.html` + `history.js` | 本地历史列表（`oa_history`）。 |
+| `ui/options/options.html` + `options.js` + `options.css` | 广播提示词、发送历史、快速聚焦、站点勾选与平铺操作（Chrome 扩展详情 →「扩展程序选项」或右键图标 →「选项」）。 |
+| `ui/controller/controller.css` | 选项页内站点列表与工具条的共用样式。 |
 
 ---
 
@@ -90,9 +90,9 @@
 
 | 文件 | 作用 |
 |------|------|
-| `assets/styles.css` | 多页面共用样式（需在 `manifest.json` 的 `web_accessible_resources` 中声明）。 |
-| `assets/quick-focus.js` | 快速聚焦已绑定窗口等逻辑。 |
-| `assets/switcher-pip.js` | 画中画 / 独立小窗打开切换器（内部 `getURL` 指向 `ui/switcher/switcher.html`）。 |
+| `assets/styles.css` | 选项页输入条等共用样式。 |
+| `assets/quick-focus.js` | `loadOrderedSelectedSitesPayload`、选项页「快速聚焦」按钮渲染。 |
+| `assets/options-settings.js` | 选项页「窗口与站点」面板（勾选、布局、`OA_BG_OPEN_WINDOWS` / `OA_BG_TILE` 等）。 |
 
 ---
 

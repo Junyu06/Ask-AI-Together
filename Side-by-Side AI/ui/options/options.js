@@ -1,17 +1,9 @@
 "use strict";
 
-const CONTROLLER_URL = chrome.runtime.getURL("ui/controller/controller.html");
-const HISTORY_URL = chrome.runtime.getURL("ui/history/history.html");
 const STORAGE_HISTORY = "oa_history";
 
-const WIN_H_COLLAPSED = 280;
-const WIN_H_EXPANDED = 560;
-
-/** 与旧版 app.js 一致：避免中文输入法 composition 期间 Enter 误触发发送 */
+/** @type {boolean} */
 let promptIsComposing = false;
-
-/** @type {Array<object>} */
-let historyCache = [];
 
 function escapeHtml(str) {
   return String(str)
@@ -33,18 +25,15 @@ function setSendStatus(text) {
   const el = document.getElementById("send-status");
   if (!el) return;
   el.textContent = text || "";
-  if (text) {
-    el.classList.remove("hidden");
-  } else {
-    el.classList.add("hidden");
-  }
+  if (text) el.classList.remove("hidden");
+  else el.classList.add("hidden");
 }
 
 function autoResizePrompt() {
   const promptEl = document.getElementById("prompt");
   if (!promptEl) return;
   promptEl.style.height = "auto";
-  promptEl.style.height = `${Math.min(promptEl.scrollHeight, 200)}px`;
+  promptEl.style.height = `${Math.min(promptEl.scrollHeight, 240)}px`;
 }
 
 function normalizeCollectedResponseText(text) {
@@ -54,7 +43,6 @@ function normalizeCollectedResponseText(text) {
     .trim();
 }
 
-/** 与旧版 buildCombinedLatestPrompt 一致（中文文案） */
 function buildCombinedLatestPrompt(sections, existingPrompt = "") {
   const body = sections
     .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || "[未获取到回复]"}`)
@@ -63,31 +51,7 @@ function buildCombinedLatestPrompt(sections, existingPrompt = "") {
   return `${body}\n\n---------\n\n${footer}`.trim();
 }
 
-async function applySwitcherWindowTopPreference() {
-  const pipEmbed = new URLSearchParams(location.search).get("pip") === "1";
-  const embedMode = new URLSearchParams(location.search).get("embed") === "1";
-  if (pipEmbed || embedMode) return;
-
-  const data = await chrome.storage.local.get(["oa_switcher_always_on_top"]);
-  const onTop = Boolean(data.oa_switcher_always_on_top);
-  try {
-    const w = await chrome.windows.getCurrent();
-    if (w?.id == null) return;
-    const delays = [0, 30, 60, 120, 200, 300];
-    for (const ms of delays) {
-      if (ms) await new Promise((r) => setTimeout(r, ms));
-      try {
-        await chrome.windows.update(w.id, { alwaysOnTop: onTop, focused: true });
-      } catch (_e) {
-        /* ignore */
-      }
-    }
-  } catch (_e) {
-    /* ignore */
-  }
-}
-
-async function applySwitcherTheme() {
+async function applyOptionsTheme() {
   const data = await chrome.storage.local.get(["oa_theme_mode"]);
   let mode = data.oa_theme_mode || "system";
   let effective = mode;
@@ -117,7 +81,7 @@ async function deleteHistoryEntry(entryId) {
 async function renderHistoryPanel() {
   const listEl = document.getElementById("history-panel-list");
   if (!listEl) return;
-  historyCache = await loadHistoryRaw();
+  const historyCache = await loadHistoryRaw();
   listEl.innerHTML = "";
 
   if (!historyCache.length) {
@@ -139,7 +103,6 @@ async function renderHistoryPanel() {
     del.type = "button";
     del.className = "history-row-del";
     del.textContent = "删除";
-    del.title = "从历史中移除（不关闭网页）";
     del.addEventListener("click", (ev) => {
       ev.stopPropagation();
       void deleteHistoryEntry(item.id);
@@ -172,8 +135,8 @@ async function renderHistoryPanel() {
         const n = typeof res.navigated === "number" ? res.navigated : 0;
         setSendStatus(
           n
-            ? `已导航 ${n} 个已绑定标签页。未绑定的站点请先在控制器打开。`
-            : "没有已绑定的标签页可导航，请先在控制器打开对应站点。"
+            ? `已导航 ${n} 个已绑定标签页。未绑定的站点请先在下方勾选并打开对应窗口。`
+            : "没有已绑定的标签页可导航，请先勾选目标并打开对应站点。"
         );
       });
     }
@@ -185,65 +148,18 @@ async function renderHistoryPanel() {
   }
 }
 
-async function setHistoryPanelOpen(open) {
-  document.body.classList.toggle("history-panel-open", open);
-  const panel = document.getElementById("history-panel");
-  if (panel) {
-    panel.setAttribute("aria-hidden", open ? "false" : "true");
-  }
-  const hb = document.getElementById("history-btn");
-  if (hb) {
-    hb.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-  const pipEmbed = new URLSearchParams(location.search).get("pip") === "1";
-  const embedMode = new URLSearchParams(location.search).get("embed") === "1";
-  if (pipEmbed || embedMode) return;
-
-  try {
-    const w = await chrome.windows.getCurrent();
-    if (w?.id != null) {
-      await chrome.windows.update(w.id, { height: open ? WIN_H_EXPANDED : WIN_H_COLLAPSED });
-    }
-  } catch (_e) {
-    /* PiP 内嵌 iframe 等场景可能无法改窗口高度 */
-  }
-}
-
-function toggleHistoryPanel() {
-  const open = !document.body.classList.contains("history-panel-open");
-  void setHistoryPanelOpen(open);
-  if (open) void renderHistoryPanel();
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
-  await applySwitcherTheme();
-  const pipEmbed = new URLSearchParams(location.search).get("pip") === "1";
+  await applyOptionsTheme();
+
   const embedMode = new URLSearchParams(location.search).get("embed") === "1";
-  const chromeWindowMode = !pipEmbed && !embedMode;
-
-  if (pipEmbed || embedMode) {
-    document.getElementById("switcher-pip-top")?.remove();
-    document.getElementById("switcher-pip-hint")?.remove();
-  } else {
-    const data = await chrome.storage.local.get(["oa_switcher_always_on_top"]);
-    const hint = document.getElementById("switcher-pip-hint");
-    if (hint && data.oa_switcher_always_on_top) {
-      hint.hidden = false;
-    }
-  }
-
   if (embedMode) {
-    const sub = document.querySelector(".switcher-sub");
-    if (sub) {
-      sub.textContent =
-        "已嵌入当前网页侧栏（点「关闭侧栏」或按 Esc 收起）。发送目标仍为控制器里勾选的站点。";
-    }
-    const closeBtn = document.getElementById("switcher-embed-close");
+    document.body.classList.add("options-embed");
+    const closeBtn = document.getElementById("opt-embed-close");
     if (closeBtn) {
       closeBtn.hidden = false;
       closeBtn.addEventListener("click", () => {
         try {
-          window.parent.postMessage({ type: "OA_EMBED_CLOSE", source: "oa-switcher" }, "*");
+          window.parent.postMessage({ type: "OA_EMBED_CLOSE", source: "oa-options-embed" }, "*");
         } catch (_e) {
           /* ignore */
         }
@@ -251,10 +167,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  if (chromeWindowMode) {
-    void applySwitcherWindowTopPreference();
+  const embedToggle = document.getElementById("page-embed-fab-toggle");
+  if (embedToggle) {
+    const d = await chrome.storage.local.get(["oa_page_embed_switcher_enabled"]);
+    embedToggle.checked = d.oa_page_embed_switcher_enabled !== false;
+    embedToggle.addEventListener("change", async () => {
+      await chrome.storage.local.set({ oa_page_embed_switcher_enabled: embedToggle.checked });
+    });
   }
-  void renderQuickFocus("switcher-targets");
+
+  document.addEventListener("keydown", (e) => {
+    if (!embedMode || e.key !== "Escape") return;
+    try {
+      window.parent.postMessage({ type: "OA_EMBED_CLOSE", source: "oa-options-embed" }, "*");
+    } catch (_e) {
+      /* ignore */
+    }
+  });
+
+  void renderQuickFocus("opt-targets");
   void renderHistoryPanel();
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -262,67 +193,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     void renderHistoryPanel();
   });
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if (document.body.classList.contains("history-panel-open")) {
-      void setHistoryPanelOpen(false);
-      return;
-    }
-    if (embedMode) {
-      try {
-        window.parent.postMessage({ type: "OA_EMBED_CLOSE", source: "oa-switcher" }, "*");
-      } catch (_e) {
-        /* ignore */
-      }
-    }
+  document.getElementById("opt-refresh-focus")?.addEventListener("click", () => {
+    void renderQuickFocus("opt-targets");
+    window.__oaRefreshOptionsSettings?.();
+  });
+
+  document.getElementById("history-clear-all")?.addEventListener("click", async () => {
+    await chrome.storage.local.set({ [STORAGE_HISTORY]: [] });
+    await renderHistoryPanel();
   });
 
   const promptEl = document.getElementById("prompt");
   const combineLatestBtnEl = document.getElementById("combine-latest");
 
-  document.getElementById("switcher-pip-top")?.addEventListener("click", async () => {
-    try {
-      await openSwitcherAsDocumentPictureInPicture();
-      window.close();
-    } catch (e) {
-      setSendStatus(`画中画失败：${e?.message || String(e)}`);
-    }
-  });
-
-  document.getElementById("history-panel-close")?.addEventListener("click", () => {
-    void setHistoryPanelOpen(false);
-  });
-
-  document.getElementById("history-open-fullpage")?.addEventListener("click", () => {
-    chrome.tabs.create({ url: HISTORY_URL });
-  });
-
-  document.getElementById("switcher-refresh").addEventListener("click", () => {
-    void renderQuickFocus("switcher-targets");
-  });
-
-  document.getElementById("switcher-open-controller").addEventListener("click", () => {
-    chrome.runtime.sendMessage({ type: "OA_BG_OPEN_CONTROLLER" });
-  });
-
-  document.getElementById("site-settings-btn").addEventListener("click", () => {
-    chrome.tabs.create({ url: CONTROLLER_URL });
-  });
-
-  document.getElementById("history-btn").addEventListener("click", () => {
-    toggleHistoryPanel();
-  });
-
-  document.getElementById("combine-latest").addEventListener("click", async () => {
+  document.getElementById("combine-latest")?.addEventListener("click", async () => {
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
-      setSendStatus("请先在控制器里勾选站点。");
+      setSendStatus("请先在下方勾选目标站点。");
       return;
     }
     if (combineLatestBtnEl) {
       combineLatestBtnEl.disabled = true;
-      combineLatestBtnEl.setAttribute("title", "正在汇总…");
     }
     setSendStatus("正在汇总各窗口最新回复…");
     try {
@@ -344,18 +236,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       setSendStatus("已汇总到输入框。");
     } finally {
-      if (combineLatestBtnEl) {
-        combineLatestBtnEl.disabled = false;
-        combineLatestBtnEl.setAttribute("title", "汇总最新回复");
-      }
+      if (combineLatestBtnEl) combineLatestBtnEl.disabled = false;
     }
   });
 
-  document.getElementById("new-chat").addEventListener("click", async () => {
+  document.getElementById("new-chat")?.addEventListener("click", async () => {
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
-      setSendStatus("请先在控制器里勾选站点。");
+      setSendStatus("请先在下方勾选目标站点。");
       return;
     }
     await chrome.runtime.sendMessage({
@@ -366,11 +255,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     setSendStatus("已请求各站点新对话。");
   });
 
-  document.getElementById("send").addEventListener("click", async () => {
+  document.getElementById("send")?.addEventListener("click", async () => {
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
-      setSendStatus("请先在控制器里勾选站点。");
+      setSendStatus("请先在下方勾选目标站点。");
       return;
     }
     const message = String(promptEl?.value || "");
@@ -399,7 +288,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (e.isComposing || promptIsComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      document.getElementById("send").click();
+      document.getElementById("send")?.click();
     }
   });
 

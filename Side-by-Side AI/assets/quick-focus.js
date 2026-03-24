@@ -84,7 +84,7 @@ async function renderQuickFocus(containerId) {
   const ids = Object.keys(targets);
   if (!ids.length) {
     el.innerHTML =
-      "<p class=\"qf-hint\">暂无已绑定的 AI 窗口。请先在「多窗口控制器」里打开站点。</p>";
+      "<p class=\"qf-hint\">暂无已绑定的 AI 窗口。请在扩展「选项」中勾选站点并打开窗口，或点击工具栏图标平铺。</p>";
     return;
   }
 
