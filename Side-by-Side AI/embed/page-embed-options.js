@@ -228,6 +228,24 @@ function postToEmbed(payload) {
   }
 }
 
+async function openFullOptionsPage() {
+  if (!embedContextValid) return;
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "OA_BG_OPEN_OPTIONS_PAGE" });
+    if (res?.ok) return;
+  } catch (_e) {
+    /* ignore */
+  }
+
+  try {
+    const url = getOptionsEmbedUrl().replace(/\?embed=1$/, "");
+    if (!url) return;
+    window.open(url, "_blank", "noopener");
+  } catch (_e) {
+    /* ignore */
+  }
+}
+
 /**
  * iframe 尚未 load 时可能同时排队「新聊天」与「打开历史」；若先 flush 了 new-chat 再 VIEW history，
  * 会误开新对话。若队列里存在「历史」视图，则丢弃「最后一次 VIEW history」之前的 new-chat 调用。
@@ -379,11 +397,7 @@ function ensureDock() {
   );
   toolsBelow.appendChild(
     mkTool("set", "设置", iconSettings, () => {
-      try {
-        chrome.runtime.openOptionsPage();
-      } catch (_e) {
-        /* ignore */
-      }
+      void openFullOptionsPage();
     })
   );
 

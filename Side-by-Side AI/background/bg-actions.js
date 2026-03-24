@@ -108,6 +108,34 @@ async function focusTarget(siteId) {
   }
 }
 
+async function closeTargets(siteIds, siteEntries) {
+  if (Array.isArray(siteEntries) && siteEntries.length) {
+    await syncTargetsFromTabsForSites(siteEntries);
+  }
+  const targets = await loadTargets();
+  const ids = Array.isArray(siteIds) ? siteIds : [];
+  const tabIds = [];
+
+  for (const siteId of ids) {
+    const rec = targets[siteId];
+    if (!rec?.tabId) continue;
+    tabIds.push(rec.tabId);
+    delete targets[siteId];
+  }
+
+  const uniqueTabIds = [...new Set(tabIds)];
+  if (uniqueTabIds.length) {
+    try {
+      await chrome.tabs.remove(uniqueTabIds);
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  await saveTargets(targets);
+  return { ok: true, closedCount: uniqueTabIds.length };
+}
+
 /** 与旧版分屏页类似：广播发送成功后写入本地 oa_history（简化版，无去重合并） */
 async function appendHistoryAfterSend(message, siteIds, targets) {
   const text = String(message || "").trim();

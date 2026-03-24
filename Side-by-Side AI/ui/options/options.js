@@ -1,6 +1,7 @@
 "use strict";
 
 const STORAGE_HISTORY = "oa_history";
+const STORAGE_THEME_MODE = "oa_theme_mode";
 
 /** @type {boolean} */
 let promptIsComposing = false;
@@ -14,8 +15,15 @@ function escapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
+function t(key, vars = {}) {
+  const i18n = window.OA_OPTIONS_I18N;
+  if (i18n?.format) return i18n.format(key, vars);
+  return key;
+}
+
 function formatTime(ts) {
-  return new Intl.DateTimeFormat("zh-CN", {
+  const locale = window.OA_OPTIONS_I18N?.getLocale?.() === "zh" ? "zh-CN" : "en-US";
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "short",
     timeStyle: "short"
   }).format(new Date(ts));
@@ -45,9 +53,9 @@ function normalizeCollectedResponseText(text) {
 
 function buildCombinedLatestPrompt(sections, existingPrompt = "") {
   const body = sections
-    .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || "[未获取到回复]"}`)
+    .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || t("combine_unavailable")}`)
     .join("\n\n---------\n\n");
-  const footer = String(existingPrompt || "").trim() || "请在这里写你的要求";
+  const footer = String(existingPrompt || "").trim() || t("combine_footer");
   return `${body}\n\n---------\n\n${footer}`.trim();
 }
 
@@ -64,8 +72,8 @@ function buildSiteEntriesFromHistoryUrls(urls) {
 }
 
 async function applyOptionsTheme() {
-  const data = await chrome.storage.local.get(["oa_theme_mode"]);
-  let mode = data.oa_theme_mode || "system";
+  const data = await chrome.storage.local.get([STORAGE_THEME_MODE]);
+  let mode = data[STORAGE_THEME_MODE] || "system";
   let effective = mode;
   if (mode === "system") {
     effective = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -73,6 +81,16 @@ async function applyOptionsTheme() {
     effective = mode === "dark" ? "dark" : "light";
   }
   document.documentElement.setAttribute("data-theme", effective);
+}
+
+async function syncPreferenceControls() {
+  const data = await chrome.storage.local.get([STORAGE_THEME_MODE]);
+  const themeEl = document.getElementById("options-theme-mode");
+  if (themeEl) themeEl.value = data[STORAGE_THEME_MODE] || "system";
+  const localeEl = document.getElementById("options-locale-mode");
+  if (localeEl && window.OA_OPTIONS_I18N?.getLocaleMode) {
+    localeEl.value = window.OA_OPTIONS_I18N.getLocaleMode();
+  }
 }
 
 async function loadHistoryRaw() {
@@ -99,7 +117,7 @@ async function renderHistoryPanel() {
   if (!historyCache.length) {
     const li = document.createElement("li");
     li.className = "history-empty";
-    li.textContent = "暂无发送记录。成功广播提示词后会出现在这里。";
+    li.textContent = t("history_empty");
     listEl.appendChild(li);
     return;
   }
@@ -114,7 +132,7 @@ async function renderHistoryPanel() {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "history-row-del";
-    del.textContent = "删除";
+    del.textContent = t("history_deleted");
     del.addEventListener("click", (ev) => {
       ev.stopPropagation();
       void deleteHistoryEntry(item.id);
@@ -123,17 +141,21 @@ async function renderHistoryPanel() {
     const body = document.createElement("div");
     body.className = "history-row-body";
     const promptText = escapeHtml((item.prompt || "").slice(0, 280));
-    const meta = `${formatTime(item.ts)} · ${urlCount} 个站点链接 · ${escapeHtml((item.sites || []).join(", "))}`;
-    body.innerHTML = `<div class="history-row-prompt">${promptText || "（无正文）"}</div><div class="history-row-meta">${meta}</div>`;
+    const meta = t("history_meta_links", {
+      time: formatTime(item.ts),
+      count: urlCount,
+      sites: (item.sites || []).join(", ")
+    });
+    body.innerHTML = `<div class="history-row-prompt">${promptText || t("history_body_empty")}</div><div class="history-row-meta">${escapeHtml(meta)}</div>`;
 
     if (!urlCount) {
       body.style.opacity = "0.55";
-      body.title = "该条没有保存各站点 URL 快照，无法恢复页面";
+      body.title = t("history_restore_missing");
     } else {
       body.classList.add("is-clickable");
-      body.title = "点击：已绑定的各站点标签页会打开对应 URL";
+      body.title = t("history_restore_title");
       body.addEventListener("click", async () => {
-        setSendStatus("正在恢复各站点页面…");
+        setSendStatus(t("status_restore_running"));
         const sites = buildSiteEntriesFromHistoryUrls(urls);
         const res = await chrome.runtime.sendMessage({
           type: "OA_BG_RESTORE_HISTORY_URLS",
@@ -141,15 +163,11 @@ async function renderHistoryPanel() {
           sites
         });
         if (!res?.ok) {
-          setSendStatus(`恢复失败：${res?.error || "未知错误"}`);
+          setSendStatus(t("status_restore_failed", { reason: res?.error || "unknown" }));
           return;
         }
         const n = typeof res.navigated === "number" ? res.navigated : 0;
-        setSendStatus(
-          n
-            ? `已导航 ${n} 个已绑定标签页。未绑定的站点请先在下方勾选并打开对应窗口。`
-            : "没有已绑定的标签页可导航，请先勾选目标并打开对应站点。"
-        );
+        setSendStatus(n ? t("status_restore_done", { count: n }) : t("status_restore_none"));
       });
     }
 
@@ -161,7 +179,9 @@ async function renderHistoryPanel() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  await window.OA_OPTIONS_I18N?.ready?.();
   await applyOptionsTheme();
+  await syncPreferenceControls();
 
   const embedMode = new URLSearchParams(location.search).get("embed") === "1";
   if (embedMode) {
@@ -232,9 +252,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.__oaRefreshOptionsSettings?.();
   });
 
+  document.getElementById("hero-open-tile")?.addEventListener("click", () => {
+    window.__oaOptionsOpenAndTile?.();
+  });
+  document.getElementById("hero-retile")?.addEventListener("click", () => {
+    window.__oaOptionsRetile?.();
+  });
+  document.getElementById("hero-close-targets")?.addEventListener("click", () => {
+    window.__oaOptionsCloseTargets?.();
+  });
+
   document.getElementById("history-clear-all")?.addEventListener("click", async () => {
     await chrome.storage.local.set({ [STORAGE_HISTORY]: [] });
     await renderHistoryPanel();
+  });
+
+  document.getElementById("options-theme-mode")?.addEventListener("change", async (event) => {
+    const value = event.target?.value;
+    const mode = value === "light" || value === "dark" ? value : "system";
+    await chrome.storage.local.set({ [STORAGE_THEME_MODE]: mode });
+    await applyOptionsTheme();
+  });
+
+  document.getElementById("options-locale-mode")?.addEventListener("change", async (event) => {
+    const value = event.target?.value;
+    const mode = value === "zh" || value === "en" ? value : "auto";
+    await window.OA_OPTIONS_I18N?.setLocaleMode?.(mode);
+    await syncPreferenceControls();
+    await renderHistoryPanel();
+    void renderQuickFocus("opt-targets");
+    window.__oaRefreshOptionsSettings?.();
   });
 
   const promptEl = document.getElementById("prompt");
@@ -244,13 +291,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
-      setSendStatus("请先在下方勾选目标站点。");
+      setSendStatus(t("status_pick_sites"));
       return;
     }
     if (combineLatestBtnEl) {
       combineLatestBtnEl.disabled = true;
     }
-    setSendStatus("正在汇总各窗口最新回复…");
+    setSendStatus(t("status_combining"));
     try {
       const res = await chrome.runtime.sendMessage({
         type: "OA_BG_COLLECT_LAST",
@@ -258,7 +305,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         sites
       });
       if (!res?.ok || !Array.isArray(res.sections)) {
-        setSendStatus(`汇总失败：${res?.error || "未知错误"}`);
+        setSendStatus(`Collect failed: ${res?.error || "unknown"}`);
         return;
       }
       if (promptEl) {
@@ -268,7 +315,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const c = promptEl.value.length;
         promptEl.setSelectionRange(c, c);
       }
-      setSendStatus("已汇总到输入框。");
+      setSendStatus(t("status_combined"));
     } finally {
       if (combineLatestBtnEl) combineLatestBtnEl.disabled = false;
     }
@@ -278,7 +325,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
-      setSendStatus("请先在下方勾选目标站点。");
+      setSendStatus(t("status_pick_sites"));
       return;
     }
     await chrome.runtime.sendMessage({
@@ -286,19 +333,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       siteIds,
       sites
     });
-    setSendStatus("已请求各站点新对话。");
+    setSendStatus(t("status_new_chat_sent"));
   });
 
   document.getElementById("send")?.addEventListener("click", async () => {
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
-      setSendStatus("请先在下方勾选目标站点。");
+      setSendStatus(t("status_pick_sites"));
       return;
     }
     const message = String(promptEl?.value || "");
     const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    setSendStatus("正在发送…");
+    setSendStatus(t("status_sending"));
     const res = await chrome.runtime.sendMessage({
       type: "OA_BG_SEND_PROMPT",
       siteIds,
@@ -307,14 +354,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       requestId
     });
     if (!res?.ok) {
-      setSendStatus(`发送失败：${res?.error || "未知错误"}`);
+      setSendStatus(`Send failed: ${res?.error || "unknown"}`);
       return;
     }
     if (promptEl) {
       promptEl.value = "";
       autoResizePrompt();
     }
-    setSendStatus("已发送到各窗口。");
+    setSendStatus(t("status_sent"));
     void renderHistoryPanel();
   });
 
@@ -340,12 +387,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   autoResizePrompt();
 });
 
+window.addEventListener("oa-options-locale-changed", () => {
+  void renderHistoryPanel();
+  void renderQuickFocus("opt-targets");
+});
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || !msg.type) return;
   const promptEl = document.getElementById("prompt");
   if (msg.type === "OA_QUOTE_TEXT" && msg.payload?.text && promptEl) {
-    const t = String(msg.payload.text || "");
-    promptEl.value = promptEl.value ? `${promptEl.value}\n${t}` : t;
+    const quoted = String(msg.payload.text || "");
+    promptEl.value = promptEl.value ? `${promptEl.value}\n${quoted}` : quoted;
     autoResizePrompt();
   }
   if (msg.type === "OA_SEND_PROGRESS" && msg.payload) {

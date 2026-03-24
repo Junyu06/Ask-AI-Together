@@ -4,11 +4,20 @@ body.options-page {
   min-height: 100vh;
 }
 
+body.options-page.controller-page {
+  max-width: 1180px;
+  padding-inline: 24px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 34%),
+    radial-gradient(circle at top right, rgba(16, 185, 129, 0.12), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 95%, white 5%), var(--bg));
+}
+
 .options-header-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 18px;
   flex-wrap: wrap;
 }
 
@@ -16,11 +25,69 @@ body.options-page {
   margin: 0;
 }
 
+.options-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 28px;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 12%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, white 8%), color-mix(in srgb, var(--surface) 98%, transparent));
+  box-shadow: var(--shadow);
+}
+
+.options-brand {
+  max-width: 640px;
+}
+
+.options-kicker {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.options-hero-title {
+  margin: 8px 0 0;
+  max-width: 34rem;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.options-pref-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  width: min(100%, 420px);
+}
+
+.options-pref-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.options-pref-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .options-embed-toggle {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 12px 0;
+  margin: 18px 0 12px;
   font-size: 13px;
   line-height: 1.45;
   cursor: pointer;
@@ -33,11 +100,45 @@ body.options-page {
 }
 
 .options-intro {
-  margin: 0 0 20px;
+  margin: 0;
+  max-width: 48rem;
+}
+
+.options-quick-actions {
+  margin-top: 20px;
+  margin-bottom: 0;
+  padding: 16px 18px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.options-quick-copy h2 {
+  margin-bottom: 6px;
+}
+
+.options-quick-copy p {
+  margin: 0;
+  max-width: 34rem;
+}
+
+.options-quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 body.options-page.options-embed .options-intro,
-body.options-page.options-embed .options-embed-toggle {
+body.options-page.options-embed .options-embed-toggle,
+body.options-page.options-embed .options-quick-actions,
+body.options-page.options-embed .options-pref-grid,
+body.options-page.options-embed .options-kicker,
+body.options-page.options-embed .options-hero-title {
   display: none;
 }
 
@@ -148,55 +249,73 @@ html:has(body.options-embed) {
 }
 
 .options-wrap {
-  max-width: 920px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 20px 20px 48px;
+  padding: 24px 0 56px;
 }
 
 .options-header h1 {
-  font-size: 1.35rem;
-  font-weight: 650;
-  margin: 0 0 8px;
+  font-size: clamp(2rem, 3.6vw, 3rem);
+  font-weight: 760;
+  letter-spacing: -0.03em;
+  margin: 0;
 }
 
 .options-header p {
-  margin: 0 0 20px;
-  font-size: 0.92rem;
-  opacity: 0.85;
-  line-height: 1.5;
+  font-size: 0.96rem;
+  opacity: 0.88;
+  line-height: 1.6;
 }
 
 .opt-section {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
+  padding: 22px;
+  border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.05);
 }
 
 .opt-section h2 {
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   margin: 0 0 12px;
 }
 
-.opt-toolbar-row {
+.opt-section-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.opt-section-head h2 {
+  margin: 0;
 }
 
 #opt-targets {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-height: 40px;
 }
 
 #opt-targets .qf-btn.qf-chip {
-  padding: 6px 12px;
+  padding: 8px 14px;
   cursor: pointer;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-  background: color-mix(in srgb, Canvas 96%, CanvasText 4%);
+  background: linear-gradient(180deg, color-mix(in srgb, Canvas 98%, CanvasText 2%), color-mix(in srgb, Canvas 92%, CanvasText 8%));
   font-size: 13px;
+  transition: transform var(--trans), box-shadow var(--trans), border-color var(--trans);
+}
+
+#opt-targets .qf-btn.qf-chip:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.12);
 }
 
 .history-list-opt {
@@ -205,15 +324,16 @@ html:has(body.options-embed) {
   padding: 0;
   max-height: 360px;
   overflow-y: auto;
-  border-radius: 12px;
+  border-radius: 18px;
   border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 }
 
 .history-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   margin-bottom: 0;
   border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
   box-sizing: border-box;
@@ -273,7 +393,7 @@ body.options-page .bubble.opt-bubble {
   transform: none;
   width: 100%;
   max-width: none;
-  padding: 12px;
+  padding: 0;
 }
 
 body.options-page .bubble.opt-bubble::before {
@@ -285,5 +405,53 @@ body.options-page .bubble.opt-bubble .drag-ring {
 }
 
 .settings-panel-inner.options-settings-scroll .controller-site-list {
-  max-height: 220px;
+  max-height: 280px;
+}
+
+.controller-site-label {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  transition: border-color var(--trans), transform var(--trans), box-shadow var(--trans);
+}
+
+.controller-site-label:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.08);
+}
+
+.controller-toolbar {
+  padding: 14px;
+  border-radius: 18px;
+}
+
+@media (max-width: 720px) {
+  body.options-page.controller-page {
+    padding-inline: 14px;
+  }
+
+  .options-wrap {
+    padding-top: 14px;
+  }
+
+  .options-hero,
+  .opt-section {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .options-pref-grid {
+    width: 100%;
+  }
+
+  .options-quick-buttons,
+  .controller-toolbar {
+    width: 100%;
+  }
+
+  .options-quick-buttons .btn,
+  .controller-toolbar .btn {
+    flex: 1 1 180px;
+  }
 }

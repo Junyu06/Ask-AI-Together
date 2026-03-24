@@ -3,44 +3,91 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Side-by-Side AI — 选项</title>
+    <title>Side-by-Side AI - 选项</title>
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../controller/controller.css" />
     <link rel="stylesheet" href="options.css" />
   </head>
   <body class="options-page controller-page">
-    <button type="button" id="opt-embed-close" class="btn btn-ghost opt-embed-close-floating" hidden aria-label="关闭">
+    <button
+      type="button"
+      id="opt-embed-close"
+      class="btn btn-ghost opt-embed-close-floating"
+      hidden
+      aria-label="关闭"
+      data-i18n="options_close"
+      data-i18n-aria-label="options_close"
+    >
       关闭
     </button>
     <div class="options-wrap">
-      <header class="options-header">
+      <header class="options-header options-hero">
         <div class="options-header-top">
-          <h1>Side-by-Side AI</h1>
+          <div class="options-brand">
+            <p class="options-kicker" data-i18n="options_header_kicker">控制台</p>
+            <h1>Side-by-Side AI</h1>
+            <p class="options-hero-title" data-i18n="options_header_title">窗口编排、广播和历史都集中在这里。</p>
+          </div>
+          <div class="options-pref-grid">
+            <label class="options-pref-card">
+              <span class="options-pref-label" data-i18n="options_pref_language">语言</span>
+              <select id="options-locale-mode" class="controller-select">
+                <option value="auto" data-i18n="language_auto">跟随浏览器</option>
+                <option value="zh" data-i18n="language_zh">中文</option>
+                <option value="en" data-i18n="language_en">English</option>
+              </select>
+            </label>
+            <label class="options-pref-card">
+              <span class="options-pref-label" data-i18n="options_pref_theme">主题</span>
+              <select id="options-theme-mode" class="controller-select">
+                <option value="system" data-i18n="theme_system">跟随系统</option>
+                <option value="light" data-i18n="theme_light">浅色</option>
+                <option value="dark" data-i18n="theme_dark">深色</option>
+              </select>
+            </label>
+          </div>
         </div>
         <label class="options-embed-toggle">
           <input type="checkbox" id="page-embed-fab-toggle" />
-          <span>在支持的 AI 网页右侧显示吸边侧栏按钮（可随时关掉）</span>
+          <span data-i18n="options_embed_toggle">在支持的 AI 网页右侧显示吸边侧栏按钮（可随时关掉）</span>
         </label>
-        <p class="options-intro">
-          在此配置勾选站点、平铺布局与广播提示词。在 AI 网页上可点右侧竖条打开本页侧栏；点击浏览器工具栏扩展图标将<strong>优先打开侧栏</strong>（若在 AI 页），否则<strong>平铺已勾选的 AI 窗口</strong>。
+        <p class="options-intro" data-i18n="options_header_intro">
+          参考 main repo 那套输入条和设置层级，把多窗口 workflow 放进一个更顺手的控制台里。
         </p>
+        <section class="options-quick-actions opt-section" aria-label="Quick actions">
+          <div class="options-quick-copy">
+            <h2 data-i18n="options_quick_title">快捷操作</h2>
+            <p data-i18n="options_quick_intro">先勾选目标，再一键打开、重排或关闭多开窗口。</p>
+          </div>
+          <div class="options-quick-buttons">
+            <button type="button" class="btn btn-primary" id="hero-open-tile" data-i18n="options_quick_open">打开并平铺</button>
+            <button type="button" class="btn btn-ghost" id="hero-retile" data-i18n="options_quick_tile">仅重排窗口</button>
+            <button type="button" class="btn btn-ghost" id="hero-close-targets" data-i18n="options_quick_close">关闭已开窗口</button>
+          </div>
+        </section>
       </header>
 
       <section class="opt-section" aria-label="广播">
-        <h2>广播提示词</h2>
+        <h2 data-i18n="broadcast_title">广播提示词</h2>
         <section id="input-bubble" class="bubble bubble-input opt-bubble" aria-label="输入与操作">
           <p id="send-status" class="send-status hidden" role="status" aria-live="polite"></p>
           <div class="input-row">
             <div class="left-actions" aria-label="操作">
-              <button id="combine-latest" class="btn btn-icon btn-ghost btn-summary" type="button" title="汇总最新回复">
+              <button
+                id="combine-latest"
+                class="btn btn-icon btn-ghost btn-summary"
+                type="button"
+                title="汇总最新回复"
+                data-i18n-title="combine_latest"
+              >
                 <svg class="icon icon-summary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" aria-hidden="true">
                   <path d="M12 4.5c1.4 2.9 2.1 3.6 5 5-2.9 1.4-3.6 2.1-5 5-1.4-2.9-2.1-3.6-5-5 2.9-1.4 3.6-2.1 5-5Z" />
                 </svg>
               </button>
-              <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button">新聊天</button>
+              <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button" data-i18n="new_chat">新聊天</button>
             </div>
             <div class="prompt-wrap">
-              <label for="prompt" class="visually-hidden">输入问题</label>
+              <label for="prompt" class="visually-hidden" data-i18n="prompt_label">输入问题</label>
               <textarea
                 id="prompt"
                 name="prompt"
@@ -48,25 +95,29 @@
                 placeholder="输入问题；回车发送（Shift+Enter 换行）"
                 rows="3"
                 aria-label="输入问题"
+                data-i18n-placeholder="prompt_placeholder"
+                data-i18n-aria-label="prompt_label"
               ></textarea>
             </div>
-            <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送">发送</button>
+            <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送" data-i18n="send" data-i18n-aria-label="send">
+              发送
+            </button>
           </div>
         </section>
       </section>
 
       <section class="opt-section" aria-label="快速聚焦">
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
-          <h2 style="margin: 0">快速聚焦已绑定窗口</h2>
-          <button type="button" class="btn btn-ghost" id="opt-refresh-focus">刷新列表</button>
+        <div class="opt-section-head">
+          <h2 data-i18n="focus_title">快速聚焦已绑定窗口</h2>
+          <button type="button" class="btn btn-ghost" id="opt-refresh-focus" data-i18n="refresh_list">刷新列表</button>
         </div>
         <div id="opt-targets" aria-live="polite"></div>
       </section>
 
       <section class="opt-section" aria-label="发送历史">
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
-          <h2 style="margin: 0">发送历史</h2>
-          <button type="button" class="btn btn-ghost" id="history-clear-all">清空</button>
+        <div class="opt-section-head">
+          <h2 data-i18n="history_title">发送历史</h2>
+          <button type="button" class="btn btn-ghost" id="history-clear-all" data-i18n="clear">清空</button>
         </div>
         <ul id="history-panel-list" class="history-list-opt"></ul>
       </section>
@@ -74,42 +125,45 @@
       <section class="opt-section controller-section" aria-label="窗口与站点">
         <div class="settings-panel-inner options-settings-scroll" aria-label="窗口与站点">
           <section class="controller-section" aria-label="窗口与布局">
-            <h2 class="controller-h2">窗口与布局</h2>
+            <h2 class="controller-h2" data-i18n="window_layout_title">窗口与布局</h2>
             <div class="controller-field">
-              <label class="controller-field-label" for="sw-window-mode">新窗口外观</label>
+              <label class="controller-field-label" for="sw-window-mode" data-i18n="window_mode_label">新窗口外观</label>
               <select id="sw-window-mode" class="controller-select">
-                <option value="minimal">极简（无标签栏）</option>
-                <option value="normal">标准（完整窗口）</option>
+                <option value="minimal" data-i18n="window_mode_minimal">极简（无标签栏）</option>
+                <option value="normal" data-i18n="window_mode_normal">标准（完整窗口）</option>
               </select>
-              <p class="controller-hint">仅影响新打开或平铺拆分的窗口。</p>
+              <p class="controller-hint" data-i18n="window_mode_hint">仅影响新打开或拆分出来的窗口。</p>
             </div>
             <div class="controller-field">
-              <label class="controller-field-label" for="sw-layout-preset">平铺布局</label>
+              <label class="controller-field-label" for="sw-layout-preset" data-i18n="layout_label">窗口排列</label>
               <select id="sw-layout-preset" class="controller-select">
-                <option value="auto">自动</option>
-                <option value="horizontal">横排均分</option>
-                <option value="vertical">竖排均分</option>
-                <option value="two-top-one-bottom">三窗：上二下一</option>
-                <option value="one-left-two-right">三窗：左一右二</option>
-                <option value="grid-2x2">四窗：2×2</option>
+                <option value="auto" data-i18n="layout_auto">自动</option>
+                <option value="horizontal" data-i18n="layout_horizontal">横排均分</option>
+                <option value="vertical" data-i18n="layout_vertical">竖排均分</option>
+                <option value="focus-left" data-i18n="layout_focus_left">主窗在左，其余竖排</option>
+                <option value="focus-top" data-i18n="layout_focus_top">主窗在上，其余横排</option>
+                <option value="two-top-one-bottom" data-i18n="layout_two_top_one_bottom">三窗：上二下一</option>
+                <option value="one-left-two-right" data-i18n="layout_one_left_two_right">三窗：左一右二</option>
+                <option value="grid-2x2" data-i18n="layout_grid_2x2">四窗：2×2</option>
               </select>
             </div>
           </section>
           <section class="controller-section" aria-label="目标站点">
-            <h2 class="controller-h2">发送目标（勾选）</h2>
+            <h2 class="controller-h2" data-i18n="sites_checked_title">发送目标（勾选）</h2>
             <ul id="sw-site-list" class="controller-site-list"></ul>
           </section>
           <section class="controller-section" aria-label="运行状态">
-            <h2 class="controller-h2">窗口状态</h2>
+            <h2 class="controller-h2" data-i18n="running_state_title">窗口状态</h2>
             <div id="sw-target-status" class="controller-target-status" role="status"></div>
           </section>
           <section class="controller-section controller-actions" aria-label="操作">
             <div class="controller-toolbar" role="toolbar">
-              <button type="button" class="btn btn-primary" id="sw-open-windows">打开 / 复用窗口</button>
-              <button type="button" class="btn btn-ghost" id="sw-tile">平铺</button>
-              <button type="button" class="btn btn-ghost" id="sw-retile">重排</button>
-              <button type="button" class="btn btn-ghost" id="sw-focus">聚焦首个</button>
-              <button type="button" class="btn btn-ghost" id="sw-refresh">刷新状态</button>
+              <button type="button" class="btn btn-primary" id="sw-open-windows" data-i18n="open_windows">打开 / 复用窗口</button>
+              <button type="button" class="btn btn-ghost" id="sw-tile" data-i18n="tile">平铺</button>
+              <button type="button" class="btn btn-ghost" id="sw-retile" data-i18n="retile">重排</button>
+              <button type="button" class="btn btn-ghost" id="sw-focus" data-i18n="focus_first">聚焦首个</button>
+              <button type="button" class="btn btn-ghost" id="sw-close" data-i18n="close_targets">关闭已开窗口</button>
+              <button type="button" class="btn btn-ghost" id="sw-refresh" data-i18n="refresh_state">刷新状态</button>
             </div>
             <p id="sw-panel-status" class="controller-send-status" role="status" aria-live="polite"></p>
           </section>
@@ -117,6 +171,7 @@
       </section>
     </div>
 
+    <script src="../../assets/options-i18n.js"></script>
     <script src="../../assets/quick-focus.js"></script>
     <script src="../../assets/options-settings.js"></script>
     <script src="options.js"></script>

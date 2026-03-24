@@ -87,6 +87,7 @@
         "ui/options/options.css",
         "assets/styles.css",
         "assets/quick-focus.js",
+        "assets/options-i18n.js",
         "assets/options-settings.js",
         "ui/controller/controller.css"
       ],

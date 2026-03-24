@@ -33,6 +33,12 @@ function qfEscapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
+function qfT(key, vars = {}) {
+  const i18n = window.OA_OPTIONS_I18N;
+  if (i18n?.format) return i18n.format(key, vars);
+  return key;
+}
+
 /**
  * 与控制器页一致：按「设置里的站点顺序」返回当前勾选站点的 { siteId, url }。
  * @returns {Promise<Array<{ siteId: string, url: string }>>}
@@ -69,6 +75,7 @@ async function loadOrderedSelectedSitesPayload() {
  * @param {string} containerId
  */
 async function renderQuickFocus(containerId) {
+  await window.OA_OPTIONS_I18N?.ready?.();
   const el = document.getElementById(containerId);
   if (!el) return;
 
@@ -76,15 +83,14 @@ async function renderQuickFocus(containerId) {
   try {
     res = await chrome.runtime.sendMessage({ type: "OA_BG_GET_STATE" });
   } catch (_e) {
-    el.innerHTML = "<p class=\"qf-hint\">无法连接扩展后台，请重试。</p>";
+    el.innerHTML = `<p class="qf-hint">${qfEscapeHtml(qfT("status_quick_focus_error"))}</p>`;
     return;
   }
 
   const targets = res?.targets || {};
   const ids = Object.keys(targets);
   if (!ids.length) {
-    el.innerHTML =
-      "<p class=\"qf-hint\">暂无已绑定的 AI 窗口。请在扩展「选项」中勾选站点并打开窗口，或点击工具栏图标平铺。</p>";
+    el.innerHTML = `<p class="qf-hint">${qfEscapeHtml(qfT("status_quick_focus_empty"))}</p>`;
     return;
   }
 
@@ -93,7 +99,7 @@ async function renderQuickFocus(containerId) {
       const name = QF_SITE_LABELS[id] || id;
       const safeId = qfEscapeHtml(id);
       const safeName = qfEscapeHtml(name);
-      return `<button type="button" class="qf-btn qf-chip" data-site-id="${safeId}">聚焦 ${safeName}</button>`;
+      return `<button type="button" class="qf-btn qf-chip" data-site-id="${safeId}">${qfEscapeHtml(qfT("quick_focus_button", { name }))}</button>`;
     })
     .join("");
 

@@ -37,6 +37,12 @@
 
   if (!siteListEl || !statusEl) return;
 
+  function t(key, vars = {}) {
+    const i18n = window.OA_OPTIONS_I18N;
+    if (i18n?.format) return i18n.format(key, vars);
+    return key;
+  }
+
   function allSites() {
     return [...BUILTIN_SITES, ...customSites];
   }
@@ -88,6 +94,8 @@
       "auto",
       "horizontal",
       "vertical",
+      "focus-left",
+      "focus-top",
       "two-top-one-bottom",
       "one-left-two-right",
       "grid-2x2"
@@ -192,13 +200,15 @@
     const rows = selectedSiteIdsOrdered().map((siteId) => {
       const site = getSiteById(siteId);
       const name = site?.name || siteId;
-      const t = targets[siteId];
-      const ok = !!(t && t.windowId && t.tabId);
-      return `<div class="controller-chip ${ok ? "controller-chip-ok" : "controller-chip-miss"}">${escapeHtml(name)}：${
-        ok ? `窗口 #${t.windowId}` : "未打开或已关闭"
-      }</div>`;
+      const target = targets[siteId];
+      const ok = !!(target && target.windowId && target.tabId);
+      return `<div class="controller-chip ${ok ? "controller-chip-ok" : "controller-chip-miss"}">${escapeHtml(
+        ok ? t("settings_state_open", { name, windowId: target.windowId }) : t("settings_state_closed", { name })
+      )}</div>`;
     });
-    statusEl.innerHTML = rows.length ? rows.join("") : '<div class="controller-chip controller-chip-miss">未选择站点</div>';
+    statusEl.innerHTML = rows.length
+      ? rows.join("")
+      : `<div class="controller-chip controller-chip-miss">${escapeHtml(t("settings_state_missing"))}</div>`;
   }
 
   function setPanelStatus(text) {
@@ -208,7 +218,7 @@
   async function doTile() {
     const siteIds = selectedSiteIdsOrdered();
     if (!siteIds.length) {
-      setPanelStatus("请先勾选站点。");
+      setPanelStatus(t("settings_pick_sites"));
       return;
     }
     const layoutEl = document.getElementById("sw-layout-preset");
@@ -221,14 +231,15 @@
       layoutPreset
     });
     if (!res?.ok) {
-      setPanelStatus(`平铺失败：${res?.reason || res?.error || "无可用窗口"}`);
+      setPanelStatus(t("settings_tile_failed", { reason: res?.reason || res?.error || "no-windows" }));
       return;
     }
-    setPanelStatus("已按所选布局平铺（最多 4 个目标）。");
+    setPanelStatus(t("settings_tiled"));
     await refreshState();
   }
 
   async function boot() {
+    await window.OA_OPTIONS_I18N?.ready?.();
     await loadStorage();
     applyPrefsToForm();
     bindPrefsControls();
@@ -239,17 +250,17 @@
   document.getElementById("sw-open-windows")?.addEventListener("click", async () => {
     const sites = selectedSitesPayloadOrdered();
     if (!sites.length) {
-      setPanelStatus("请先勾选至少一个站点。");
+      setPanelStatus(t("settings_pick_one_site"));
       return;
     }
-    setPanelStatus("正在打开窗口…");
+    setPanelStatus(t("settings_opening"));
     const res = await chrome.runtime.sendMessage({ type: "OA_BG_OPEN_WINDOWS", sites });
     if (!res?.ok) {
-      setPanelStatus(`打开失败：${res?.error || "未知错误"}`);
+      setPanelStatus(t("settings_open_failed", { reason: res?.error || "unknown" }));
       return;
     }
     await refreshState();
-    setPanelStatus("正在按所选布局平铺…");
+    setPanelStatus(t("settings_tiling"));
     await doTile();
   });
 
@@ -259,7 +270,7 @@
   document.getElementById("sw-focus")?.addEventListener("click", async () => {
     const siteIds = selectedSiteIdsOrdered();
     if (!siteIds.length) {
-      setPanelStatus("请先勾选站点。");
+      setPanelStatus(t("settings_pick_sites"));
       return;
     }
     const st = await chrome.runtime.sendMessage({
@@ -269,21 +280,44 @@
     const targets = st?.targets || {};
     const target = siteIds.find((id) => targets[id]?.windowId);
     if (!target) {
-      setPanelStatus("没有可聚焦的窗口：请先打开对应 AI 页签，或点「打开 / 复用窗口」。");
+      setPanelStatus(t("settings_focus_missing"));
       return;
     }
     const res = await chrome.runtime.sendMessage({ type: "OA_BG_FOCUS", siteId: target });
     if (!res?.ok) {
-      setPanelStatus("无法聚焦：窗口可能已关闭，请重新打开。");
+      setPanelStatus(t("settings_focus_failed"));
       await refreshState();
       return;
     }
-    setPanelStatus(`已聚焦 ${target}`);
+    setPanelStatus(t("settings_focus_done", { target }));
+  });
+
+  document.getElementById("sw-close")?.addEventListener("click", async () => {
+    const siteIds = selectedSiteIdsOrdered();
+    if (!siteIds.length) {
+      setPanelStatus(t("settings_pick_sites"));
+      return;
+    }
+    setPanelStatus(t("settings_close_running"));
+    const res = await chrome.runtime.sendMessage({
+      type: "OA_BG_CLOSE_TARGETS",
+      siteIds,
+      sites: selectedSitesPayloadOrdered()
+    });
+    if (!res?.ok) {
+      setPanelStatus(t("settings_close_failed", { reason: res?.error || "unknown" }));
+      return;
+    }
+    await refreshState();
+    setPanelStatus(t("settings_close_done", { count: res.closedCount || 0 }));
   });
 
   document.getElementById("sw-refresh")?.addEventListener("click", () => void refreshState());
 
   window.__oaRefreshOptionsSettings = refreshState;
+  window.__oaOptionsOpenAndTile = () => document.getElementById("sw-open-windows")?.click();
+  window.__oaOptionsRetile = () => document.getElementById("sw-retile")?.click();
+  window.__oaOptionsCloseTargets = () => document.getElementById("sw-close")?.click();
 
   void boot();
 })();

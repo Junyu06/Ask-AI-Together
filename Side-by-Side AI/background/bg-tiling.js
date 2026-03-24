@@ -67,6 +67,7 @@ function tileRectsAuto(n, work) {
 function normalizeLayoutPreset(preset, n) {
   const p = preset || "auto";
   const nc = Math.min(Math.max(n, 1), 4);
+  if ((p === "focus-left" || p === "focus-top") && nc < 2) return "auto";
   if (p === "two-top-one-bottom" && nc !== 3) return "auto";
   if (p === "one-left-two-right" && nc !== 3) return "auto";
   if (p === "grid-2x2" && nc !== 4) return "auto";
@@ -86,6 +87,28 @@ function tileRects(n, work, preset) {
   }
   if (p === "vertical") {
     return tileRectsVertical(nClamped, work);
+  }
+  if (p === "focus-left" && nClamped >= 2) {
+    const primaryW = Math.floor(width * 0.58);
+    const sideW = width - primaryW;
+    const sideRects = tileRectsVertical(nClamped - 1, {
+      left: left + primaryW,
+      top,
+      width: sideW,
+      height
+    });
+    return [{ left, top, width: primaryW, height }, ...sideRects];
+  }
+  if (p === "focus-top" && nClamped >= 2) {
+    const primaryH = Math.floor(height * 0.58);
+    const bottomH = height - primaryH;
+    const bottomRects = tileRectsHorizontal(nClamped - 1, {
+      left,
+      top: top + primaryH,
+      width,
+      height: bottomH
+    });
+    return [{ left, top, width, height: primaryH }, ...bottomRects];
   }
   if (p === "two-top-one-bottom" && nClamped === 3) {
     const halfW = Math.floor(width / 2);
