@@ -63,6 +63,29 @@
     return ordered;
   }
 
+  function normalizeSiteOrder(nextOrder = siteOrder) {
+    const validIds = new Set(allSites().map((site) => site.id));
+    const seen = new Set();
+    const normalized = [];
+    (Array.isArray(nextOrder) ? nextOrder : []).forEach((id) => {
+      const cleanId = String(id || "");
+      if (!cleanId || !validIds.has(cleanId) || seen.has(cleanId)) return;
+      seen.add(cleanId);
+      normalized.push(cleanId);
+    });
+    allSites().forEach((site) => {
+      if (seen.has(site.id)) return;
+      seen.add(site.id);
+      normalized.push(site.id);
+    });
+    return normalized;
+  }
+
+  function saveSiteOrder(nextOrder = siteOrder) {
+    siteOrder = normalizeSiteOrder(nextOrder);
+    chrome.storage.local.set({ [STORAGE_KEYS.siteOrder]: siteOrder });
+  }
+
   function escapeHtml(str) {
     return String(str)
       .replaceAll("&", "&amp;")
@@ -89,6 +112,7 @@
       selectedSiteIds = ["chatgpt", "deepseek", "kimi"];
     }
     windowChromeMode = data[STORAGE_KEYS.windowChromeMode] === "normal" ? "normal" : "minimal";
+    siteOrder = normalizeSiteOrder(siteOrder);
     const rawLayout = String(data[STORAGE_KEYS.tileLayoutPreset] || "auto");
     const allowed = new Set([
       "auto",
@@ -149,7 +173,9 @@
     orderedSites().forEach((site) => {
       const li = document.createElement("li");
       li.className = "site-card";
+      li.dataset.siteId = site.id;
       const checked = selectedSiteIds.includes(site.id);
+      const dragSortLabel = escapeHtml(t("drag_sort"));
       li.innerHTML = `
         <label class="site-checkbox-content controller-site-label">
           <span class="left-section">
@@ -160,6 +186,11 @@
             <span>
               <span class="site-main-name controller-site-name">${escapeHtml(site.name)}</span>
               <span class="site-sub-name controller-site-url">${escapeHtml(site.url)}</span>
+            </span>
+          </span>
+          <span class="right-section site-order-actions">
+            <span class="site-action site-drag-handle" data-site-id="${escapeHtml(site.id)}" aria-label="${dragSortLabel}" title="${dragSortLabel}">
+              <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h3M8 12h3M8 17h3M13 7h3M13 12h3M13 17h3"/></svg>
             </span>
           </span>
         </label>
@@ -177,6 +208,63 @@
         }
         saveSelectedSites();
         void refreshState();
+      });
+    });
+    initSiteDragSort();
+  }
+
+  function initSiteDragSort() {
+    const cards = Array.from(siteListEl.querySelectorAll(".site-card"));
+    if (!cards.length) return;
+
+    async function persistSiteOrderFromDom() {
+      const orderedIds = Array.from(siteListEl.querySelectorAll(".site-card"))
+        .map((el) => el.dataset.siteId)
+        .filter(Boolean);
+      if (!orderedIds.length) return;
+      saveSiteOrder(orderedIds);
+      const selectedSet = new Set(selectedSiteIds);
+      selectedSiteIds = siteOrder.filter((id) => selectedSet.has(id));
+      saveSelectedSites();
+      await refreshState();
+    }
+
+    function moveCardToPosition(draggingEl, clientY) {
+      const candidates = Array.from(siteListEl.querySelectorAll(".site-card")).filter((card) => card !== draggingEl);
+      let next = null;
+      for (const card of candidates) {
+        const rect = card.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+          next = card;
+          break;
+        }
+      }
+      siteListEl.insertBefore(draggingEl, next);
+    }
+
+    siteListEl.querySelectorAll(".site-drag-handle").forEach((handle) => {
+      const card = handle.closest(".site-card");
+      if (!card) return;
+
+      handle.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        card.classList.add("dragging");
+
+        const onMove = (moveEvent) => {
+          moveEvent.preventDefault();
+          moveCardToPosition(card, moveEvent.clientY);
+        };
+
+        const onUp = () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          card.classList.remove("dragging");
+          void persistSiteOrderFromDom();
+        };
+
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
       });
     });
   }
@@ -300,23 +388,14 @@
   });
 
   document.getElementById("sw-close")?.addEventListener("click", async () => {
-    const siteIds = selectedSiteIdsOrdered();
-    if (!siteIds.length) {
-      setPanelStatus(t("settings_pick_sites"));
-      return;
-    }
-    setPanelStatus(t("settings_close_running"));
-    const res = await chrome.runtime.sendMessage({
-      type: "OA_BG_CLOSE_TARGETS",
-      siteIds,
-      sites: selectedSitesPayloadOrdered()
-    });
+    setPanelStatus(t("settings_close_all_running"));
+    const res = await chrome.runtime.sendMessage({ type: "OA_BG_CLOSE_ALL_TARGETS" });
     if (!res?.ok) {
-      setPanelStatus(t("settings_close_failed", { reason: res?.error || "unknown" }));
+      setPanelStatus(t("settings_close_all_failed", { reason: res?.error || "unknown" }));
       return;
     }
     await refreshState();
-    setPanelStatus(t("settings_close_done", { count: res.closedCount || 0 }));
+    setPanelStatus(t("settings_close_all_done", { count: res.closedCount || 0 }));
   });
 
   document.getElementById("sw-refresh")?.addEventListener("click", () => void refreshState());

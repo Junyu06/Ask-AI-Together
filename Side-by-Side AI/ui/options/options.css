@@ -180,18 +180,18 @@ body.options-page .bubble.opt-bubble .drag-ring {
   margin-top: 12px;
 }
 
-.settings-content {
+body.options-page .settings-content {
   display: flex;
   flex-direction: column;
 }
 
-.panel-body {
+body.options-page .panel-body {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
-.settings-sidebar {
+body.options-page .settings-sidebar {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
@@ -207,15 +207,15 @@ body.options-page .bubble.opt-bubble .drag-ring {
   min-height: 74px;
 }
 
-.settings-sidebar::-webkit-scrollbar {
+body.options-page .settings-sidebar::-webkit-scrollbar {
   display: none;
 }
 
-.settings-sidebar {
+body.options-page .settings-sidebar {
   scrollbar-width: none;
 }
 
-.sidebar-item {
+body.options-page .sidebar-item {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -228,12 +228,12 @@ body.options-page .bubble.opt-bubble .drag-ring {
   font-size: 15px;
 }
 
-.settings-tab {
+body.options-page .settings-tab {
   height: auto;
   padding-top: 16px;
 }
 
-.settings-tab.active {
+body.options-page .settings-tab.active {
   display: block;
 }
 
@@ -265,6 +265,13 @@ body.options-page .bubble.opt-bubble .drag-ring {
   transition: border-color var(--trans), background-color var(--trans), transform var(--trans), box-shadow var(--trans);
 }
 
+.site-checkbox-content.controller-site-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .site-checkbox-content:hover {
   border-color: color-mix(in srgb, var(--accent) 24%, transparent);
   background: color-mix(in srgb, var(--surface) 82%, white 18%);
@@ -274,6 +281,23 @@ body.options-page .bubble.opt-bubble .drag-ring {
 
 .controller-site-label input:checked + .slider {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.site-order-actions {
+  flex: 0 0 auto;
+}
+
+.site-drag-handle {
+  cursor: grab;
+}
+
+.site-drag-handle:active {
+  cursor: grabbing;
+}
+
+.site-card.dragging {
+  opacity: 0.72;
+  transform: scale(0.985);
 }
 
 .settings-tab[data-tab="windows"],
@@ -367,13 +391,13 @@ body.options-page.options-embed .right-panel.panel-closing {
     bottom: 10px;
   }
 
-  .settings-sidebar {
+  body.options-page .settings-sidebar {
     min-height: 64px;
     padding: 10px 12px;
     gap: 8px;
   }
 
-  .sidebar-item {
+  body.options-page .sidebar-item {
     min-height: 40px;
     padding: 0 14px;
     font-size: 14px;

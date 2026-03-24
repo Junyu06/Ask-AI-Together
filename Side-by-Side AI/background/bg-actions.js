@@ -136,6 +136,41 @@ async function closeTargets(siteIds, siteEntries) {
   return { ok: true, closedCount: uniqueTabIds.length };
 }
 
+async function closeAllTargets() {
+  const targets = await loadTargets();
+  const siteIds = Object.keys(targets);
+  if (!siteIds.length) return { ok: true, closedCount: 0 };
+  return closeTargets(siteIds);
+}
+
+async function attachFilesToTargets(siteIds, siteEntries, files = []) {
+  if (Array.isArray(siteEntries) && siteEntries.length) {
+    await syncTargetsFromTabsForSites(siteEntries);
+  }
+  const targets = await loadTargets();
+  const ids = Array.isArray(siteIds) ? siteIds : [];
+  const attachments = Array.isArray(files) ? files : [];
+  if (!attachments.length) return { ok: true, attachedCount: 0 };
+
+  let attachedCount = 0;
+  await Promise.all(
+    ids.map(async (siteId) => {
+      const rec = targets[siteId];
+      if (!rec?.tabId) return;
+      try {
+        await chrome.tabs.sendMessage(rec.tabId, {
+          type: "OA_RUNTIME_ATTACH_FILES",
+          files: attachments
+        });
+        attachedCount += 1;
+      } catch (_e) {
+        /* ignore */
+      }
+    })
+  );
+  return { ok: true, attachedCount };
+}
+
 /** 与旧版分屏页类似：广播发送成功后写入本地 oa_history（简化版，无去重合并） */
 async function appendHistoryAfterSend(message, siteIds, targets) {
   const text = String(message || "").trim();
@@ -170,7 +205,7 @@ async function appendHistoryAfterSend(message, siteIds, targets) {
   await chrome.storage.local.set({ oa_history: history.slice(0, 200) });
 }
 
-async function sendPromptToTargets(siteIds, message, requestId, siteEntries) {
+async function sendPromptToTargets(siteIds, message, requestId, siteEntries, files = []) {
   if (Array.isArray(siteEntries) && siteEntries.length) {
     await syncTargetsFromTabsForSites(siteEntries);
   }
@@ -178,6 +213,7 @@ async function sendPromptToTargets(siteIds, message, requestId, siteEntries) {
   const text = String(message || "");
   const rid = String(requestId || "");
   const ids = Array.isArray(siteIds) ? siteIds : [];
+  const attachments = Array.isArray(files) ? files : [];
   await Promise.all(
     ids.map(async (siteId) => {
       const rec = targets[siteId];
@@ -187,7 +223,7 @@ async function sendPromptToTargets(siteIds, message, requestId, siteEntries) {
           type: "OA_RUNTIME_CHAT",
           message: text,
           requestId: rid,
-          files: []
+          files: attachments
         });
       } catch (_e) {
         broadcastToExtensionPages({

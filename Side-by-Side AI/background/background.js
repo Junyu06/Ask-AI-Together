@@ -147,8 +147,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "OA_BG_CLOSE_ALL_TARGETS") {
+    closeAllTargets()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+
+  if (msg.type === "OA_BG_ATTACH_FILES") {
+    attachFilesToTargets(msg.siteIds, msg.sites, msg.files)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+
   if (msg.type === "OA_BG_SEND_PROMPT") {
-    sendPromptToTargets(msg.siteIds, msg.message, msg.requestId, msg.sites)
+    sendPromptToTargets(msg.siteIds, msg.message, msg.requestId, msg.sites, msg.files)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;

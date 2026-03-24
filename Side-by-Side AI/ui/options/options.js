@@ -7,6 +7,7 @@ const STORAGE_LOCALE_MODE = "oa_locale_mode";
 /** @type {boolean} */
 let promptIsComposing = false;
 let pendingPanelCloseTimer = 0;
+let sendStatusTimer = 0;
 
 function notifyEmbedMode(mode) {
   if (!document.body.classList.contains("options-embed")) return;
@@ -136,9 +137,43 @@ function switchSettingsTab(tab) {
 function setSendStatus(text) {
   const el = document.getElementById("send-status");
   if (!el) return;
+  if (sendStatusTimer) {
+    window.clearTimeout(sendStatusTimer);
+    sendStatusTimer = 0;
+  }
   el.textContent = text || "";
   el.classList.toggle("hidden", !text);
   el.classList.toggle("is-active", !!text);
+  if (text) {
+    sendStatusTimer = window.setTimeout(() => {
+      if (el.textContent !== text) return;
+      el.textContent = "";
+      el.classList.add("hidden");
+      el.classList.remove("is-active");
+      sendStatusTimer = 0;
+    }, 5000);
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("file-read-failed"));
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function normalizeClipboardFiles(fileList) {
+  const files = Array.from(fileList || []).filter((file) => file && String(file.type || "").startsWith("image/"));
+  const normalized = await Promise.all(
+    files.map(async (file) => ({
+      name: file.name || `image-${Date.now()}.png`,
+      type: file.type || "image/png",
+      dataUrl: await readFileAsDataUrl(file)
+    }))
+  );
+  return normalized.filter((file) => file.dataUrl);
 }
 
 function autoResizePrompt() {
@@ -175,6 +210,85 @@ function buildSiteEntriesFromHistoryUrls(urls) {
     entries.push({ siteId: cleanSiteId, url: cleanUrl });
   }
   return entries;
+}
+
+async function attachFilesNow(files) {
+  const sites = await loadOrderedSelectedSitesPayload();
+  const siteIds = sites.map((s) => s.siteId);
+  if (!siteIds.length) {
+    setSendStatus(t("status_pick_sites"));
+    return;
+  }
+  const res = await chrome.runtime.sendMessage({
+    type: "OA_BG_ATTACH_FILES",
+    siteIds,
+    sites,
+    files
+  });
+  if (!res?.ok) {
+    setSendStatus(t("status_attachments_failed"));
+    return;
+  }
+  if (!(res.attachedCount > 0)) {
+    setSendStatus(t("status_attachments_failed"));
+    return;
+  }
+  setSendStatus(t("status_attachments_ready", { count: files.length }));
+}
+
+async function handleIncomingFiles(fileList) {
+  const files = await normalizeClipboardFiles(fileList);
+  if (!files.length) return;
+  await attachFilesNow(files);
+}
+
+async function combineLatestIntoPrompt(promptEl, combineLatestBtnEl) {
+  closePanels();
+  const sites = await loadOrderedSelectedSitesPayload();
+  const siteIds = sites.map((s) => s.siteId);
+  if (!siteIds.length) {
+    setSendStatus(t("status_pick_sites"));
+    return;
+  }
+  if (combineLatestBtnEl) combineLatestBtnEl.disabled = true;
+  setSendStatus(t("status_combining"));
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: "OA_BG_COLLECT_LAST",
+      siteIds,
+      sites
+    });
+    if (!res?.ok || !Array.isArray(res.sections)) {
+      setSendStatus(`Collect failed: ${res?.error || "unknown"}`);
+      return;
+    }
+    if (promptEl) {
+      promptEl.value = buildCombinedLatestPrompt(res.sections, promptEl.value);
+      autoResizePrompt();
+      promptEl.focus();
+      const c = promptEl.value.length;
+      promptEl.setSelectionRange(c, c);
+    }
+    setSendStatus(t("status_combined"));
+  } finally {
+    if (combineLatestBtnEl) combineLatestBtnEl.disabled = false;
+  }
+}
+
+async function triggerNewChat() {
+  closePanels();
+  const sites = await loadOrderedSelectedSitesPayload();
+  const siteIds = sites.map((s) => s.siteId);
+  if (!siteIds.length) {
+    setSendStatus(t("status_pick_sites"));
+    return;
+  }
+  await chrome.runtime.sendMessage({
+    type: "OA_BG_NEW_CHAT",
+    siteIds,
+    sites
+  });
+  setSendStatus(t("status_new_chat_sent"));
 }
 
 async function applyOptionsTheme() {
@@ -309,8 +423,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       if (ev.data?.type === "OA_EMBED_INVOKE") {
         const action = ev.data.action;
-        if (action === "new-chat") document.getElementById("new-chat")?.click();
-        if (action === "combine-latest") document.getElementById("combine-latest")?.click();
+        if (action === "new-chat") void triggerNewChat();
+        if (action === "combine-latest") void combineLatestIntoPrompt(document.getElementById("prompt"), null);
         if (action === "tile") document.getElementById("sw-tile")?.click();
         if (action === "open-settings") {
           openSettingsPanel(ev.data.tab || "sites");
@@ -378,54 +492,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const promptEl = document.getElementById("prompt");
   const combineLatestBtnEl = document.getElementById("combine-latest");
 
-  document.getElementById("combine-latest")?.addEventListener("click", async () => {
-    closePanels();
-    const sites = await loadOrderedSelectedSitesPayload();
-    const siteIds = sites.map((s) => s.siteId);
-    if (!siteIds.length) {
-      setSendStatus(t("status_pick_sites"));
-      return;
-    }
-    if (combineLatestBtnEl) combineLatestBtnEl.disabled = true;
-    setSendStatus(t("status_combining"));
-    try {
-      const res = await chrome.runtime.sendMessage({
-        type: "OA_BG_COLLECT_LAST",
-        siteIds,
-        sites
-      });
-      if (!res?.ok || !Array.isArray(res.sections)) {
-        setSendStatus(`Collect failed: ${res?.error || "unknown"}`);
-        return;
-      }
-      if (promptEl) {
-        promptEl.value = buildCombinedLatestPrompt(res.sections, promptEl.value);
-        autoResizePrompt();
-        promptEl.focus();
-        const c = promptEl.value.length;
-        promptEl.setSelectionRange(c, c);
-      }
-      setSendStatus(t("status_combined"));
-    } finally {
-      if (combineLatestBtnEl) combineLatestBtnEl.disabled = false;
-    }
-  });
+  document.getElementById("combine-latest")?.addEventListener("click", () => void combineLatestIntoPrompt(promptEl, combineLatestBtnEl));
 
-  document.getElementById("new-chat")?.addEventListener("click", async () => {
-    closePanels();
-    const sites = await loadOrderedSelectedSitesPayload();
-    const siteIds = sites.map((s) => s.siteId);
-    if (!siteIds.length) {
-      setSendStatus(t("status_pick_sites"));
-      return;
-    }
-    await chrome.runtime.sendMessage({
-      type: "OA_BG_NEW_CHAT",
-      siteIds,
-      sites
-    });
-    setSendStatus(t("status_new_chat_sent"));
-  });
+  document.getElementById("new-chat")?.addEventListener("click", () => void triggerNewChat());
 
   document.getElementById("send")?.addEventListener("click", async () => {
     const sites = await loadOrderedSelectedSitesPayload();
@@ -469,6 +538,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   promptEl?.addEventListener("compositionend", () => {
     promptIsComposing = false;
+  });
+  promptEl?.addEventListener("paste", (event) => {
+    const files = event.clipboardData?.files;
+    if (!files?.length) return;
+    event.preventDefault();
+    void handleIncomingFiles(files).catch(() => {
+      setSendStatus(t("status_attachments_failed"));
+    });
+  });
+  promptEl?.addEventListener("drop", (event) => {
+    const files = event.dataTransfer?.files;
+    if (!files?.length) return;
+    event.preventDefault();
+    void handleIncomingFiles(files).catch(() => {
+      setSendStatus(t("status_attachments_failed"));
+    });
+  });
+  promptEl?.addEventListener("dragover", (event) => {
+    if (event.dataTransfer?.files?.length) event.preventDefault();
   });
   promptEl?.addEventListener("input", autoResizePrompt);
 

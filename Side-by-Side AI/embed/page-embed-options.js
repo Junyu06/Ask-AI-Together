@@ -186,6 +186,7 @@ let embedMsgPending = [];
 let embedMsgFlushScheduled = false;
 let embedIframeReady = false;
 let embedContextValid = true;
+let ensureDockScheduled = false;
 
 function markEmbedContextInvalid() {
   embedContextValid = false;
@@ -284,6 +285,11 @@ function getHostEmbedMode() {
 function openEmbedPanel() {
   if (!embedContextValid) return;
   injectEmbedStyles();
+  if (rootEl && !rootEl.isConnected) {
+    rootEl = null;
+    embedIframe = null;
+    embedIframeReady = false;
+  }
   if (!rootEl) {
     embedIframeReady = false;
     rootEl = document.createElement("div");
@@ -327,7 +333,8 @@ function toggleEmbedPanel() {
 
 function ensureDock() {
   injectEmbedStyles();
-  if (dockEl) return;
+  if (dockEl?.isConnected) return;
+  if (dockEl && !dockEl.isConnected) dockEl = null;
 
   dockEl = document.createElement("div");
   dockEl.id = "oa-embed-dock";
@@ -349,6 +356,7 @@ function ensureDock() {
   const iconHistory = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.85" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
   const iconSummary = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.85" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" /></svg>`;
   const iconTile = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.85" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5h6v6h-6zm9 0h6v6h-6zm-9 9h6v6h-6zm9 0h6v6h-6z" /></svg>`;
+  const iconCloseAll = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.95" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 7h14M9 7V5.8c0-.66.54-1.2 1.2-1.2h3.6c.66 0 1.2.54 1.2 1.2V7M8 10v6m4-6v6m4-6v6M7 7l.7 10.2c.05.69.62 1.23 1.31 1.23h6c.69 0 1.26-.54 1.31-1.23L17 7" /></svg>`;
   const iconSettings = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.85" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.391 1.018.03.22.03.435 0 .655-.047.405.098.778.391 1.02l1.003.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.39-1.018a12.694 12.694 0 010-.655c.047-.406-.098-.779-.39-1.019l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`;
 
   function mkTool(label, title, svg, onClick) {
@@ -366,11 +374,9 @@ function ensureDock() {
   }
 
   toolsAbove.appendChild(
-    mkTool("new", "新聊天", iconNewChat, () => {
-      openEmbedPanel();
-      setHostEmbedMode("default");
-      flushEmbedMessage({ type: "OA_EMBED_VIEW", view: "default" });
-      flushEmbedMessage({ type: "OA_EMBED_INVOKE", action: "new-chat" });
+    mkTool("close", "关闭全部窗口", iconCloseAll, () => {
+      closeEmbedPanel();
+      chrome.runtime.sendMessage({ type: "OA_BG_CLOSE_ALL_TARGETS" }).catch(() => {});
     })
   );
   toolsAbove.appendChild(
@@ -381,28 +387,35 @@ function ensureDock() {
       }
       openEmbedPanel();
       setHostEmbedMode("history");
-      /* 用户明确打开历史时，丢弃尚未发出的「新聊天」，避免与 iframe 首次 load 的批量 flush 顺序冲突 */
       embedMsgPending = embedMsgPending.filter(
         (p) => !(p?.type === "OA_EMBED_INVOKE" && p.action === "new-chat")
       );
       flushEmbedMessage({ type: "OA_EMBED_VIEW", view: "history" });
     })
   );
-
-  toolsBelow.appendChild(
-    mkTool("sum", "总结", iconSummary, () => {
+  toolsAbove.appendChild(
+    mkTool("new", "新聊天", iconNewChat, () => {
       openEmbedPanel();
       setHostEmbedMode("default");
       flushEmbedMessage({ type: "OA_EMBED_VIEW", view: "default" });
-      flushEmbedMessage({ type: "OA_EMBED_INVOKE", action: "combine-latest" });
+      flushEmbedMessage({ type: "OA_EMBED_INVOKE", action: "new-chat" });
     })
   );
+
   toolsBelow.appendChild(
     mkTool("tile", "平铺", iconTile, () => {
       openEmbedPanel();
       setHostEmbedMode("default");
       flushEmbedMessage({ type: "OA_EMBED_VIEW", view: "default" });
       flushEmbedMessage({ type: "OA_EMBED_INVOKE", action: "tile" });
+    })
+  );
+  toolsBelow.appendChild(
+    mkTool("sum", "总结", iconSummary, () => {
+      openEmbedPanel();
+      setHostEmbedMode("default");
+      flushEmbedMessage({ type: "OA_EMBED_VIEW", view: "default" });
+      flushEmbedMessage({ type: "OA_EMBED_INVOKE", action: "combine-latest" });
     })
   );
   toolsBelow.appendChild(
@@ -436,6 +449,18 @@ function ensureDock() {
   document.body.appendChild(dockEl);
 }
 
+function scheduleEnsureDock() {
+  if (ensureDockScheduled || !embedContextValid) return;
+  ensureDockScheduled = true;
+  window.setTimeout(async () => {
+    ensureDockScheduled = false;
+    if (!embedContextValid || window.self !== window.top) return;
+    if (!hostMatchesEmbed(location.hostname)) return;
+    if (!(await isEmbedEnabledInStorage())) return;
+    ensureDock();
+  }, 120);
+}
+
 async function isEmbedEnabledInStorage() {
   if (!embedContextValid) return false;
   try {
@@ -456,6 +481,31 @@ async function boot() {
   if (!hostMatchesEmbed(location.hostname)) return;
   if (!(await isEmbedEnabledInStorage())) return;
   ensureDock();
+}
+
+function installDockSelfHealing() {
+  const observer = new MutationObserver(() => {
+    if (dockEl?.isConnected) return;
+    scheduleEnsureDock();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  const notifyRouteChange = () => scheduleEnsureDock();
+  window.addEventListener("pageshow", notifyRouteChange);
+  window.addEventListener("popstate", notifyRouteChange);
+  window.addEventListener("hashchange", notifyRouteChange);
+
+  const wrapHistoryMethod = (name) => {
+    const original = history[name];
+    if (typeof original !== "function") return;
+    history[name] = function wrappedHistoryMethod(...args) {
+      const result = original.apply(this, args);
+      scheduleEnsureDock();
+      return result;
+    };
+  };
+  wrapHistoryMethod("pushState");
+  wrapHistoryMethod("replaceState");
 }
 
 window.addEventListener("message", (ev) => {
@@ -499,4 +549,5 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
+installDockSelfHealing();
 void boot();

@@ -108,6 +108,26 @@ function replaceChatGptContents(el, text) {
   placeCaretAtEnd(el);
 }
 
+function trimLeadingEmptyBlocks(el) {
+  if (!el?.childNodes?.length) return;
+  while (el.firstChild) {
+    const node = el.firstChild;
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (String(node.textContent || "").trim()) break;
+      node.remove();
+      continue;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) break;
+    const text = normalizeEditableText(node.textContent || "").trim();
+    const onlyBreaks = node.childNodes.length > 0 && Array.from(node.childNodes).every((child) => {
+      if (child.nodeType === Node.TEXT_NODE) return !String(child.textContent || "").trim();
+      return child.nodeType === Node.ELEMENT_NODE && String(child.nodeName || "").toUpperCase() === "BR";
+    });
+    if (text || !onlyBreaks) break;
+    node.remove();
+  }
+}
+
 function setContentEditableValue(el, text, siteId = "") {
   const t = siteId === "chatgpt" ? stripLeadingNewlinesForPrompt(text) : text;
 
@@ -157,6 +177,9 @@ function setContentEditableValue(el, text, siteId = "") {
     replaceChatGptContents(el, t);
   } else {
     replaceEditableContents(el, t);
+  }
+  if (siteId === "chatgpt") {
+    trimLeadingEmptyBlocks(el);
   }
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));

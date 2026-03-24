@@ -88,6 +88,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
   if (
     msg.type === "OA_RUNTIME_CHAT" ||
+    msg.type === "OA_RUNTIME_ATTACH_FILES" ||
     msg.type === "OA_RUNTIME_NEW_CHAT" ||
     msg.type === "OA_RUNTIME_COLLECT_LAST"
   ) {
@@ -101,6 +102,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }).catch(() => {});
     sendResponse({ ok: true });
     return false;
+  }
+  if (msg.type === "OA_RUNTIME_ATTACH_FILES") {
+    const site = currentSite() || GENERIC_SITE;
+    const inputEl = findFirst(site.inputSelectors);
+    if (!inputEl) {
+      sendResponse({ ok: false, reason: "input-not-found" });
+      return false;
+    }
+    void attachFiles(inputEl, msg.files || [], site.id)
+      .then((ok) => sendResponse({ ok }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
   }
   if (msg.type === "OA_RUNTIME_NEW_CHAT") {
     newChat();
