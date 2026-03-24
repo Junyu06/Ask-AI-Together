@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Side-by-Side AI",
   "description": "Multi-AI prompt broadcast with multi-window tiling and local session history.",
-  "version": "0.4.9",
+  "version": "0.3.0",
   "permissions": [
     "storage",
     "declarativeNetRequest",
