@@ -110,27 +110,40 @@ async function collectLastFromTargets(siteIds, siteEntries) {
   return { ok: true, sections };
 }
 
+/** 串行执行，避免多路并发时各窗口 chrome.windows.update 抢焦点导致死循环/卡死 */
+let __oaNewChatChain = Promise.resolve();
+
 async function newChatOnTargets(siteIds, siteEntries) {
-  if (Array.isArray(siteEntries) && siteEntries.length) {
-    await syncTargetsFromTabsForSites(siteEntries);
-  }
-  const targets = await loadTargets();
-  const ids = Array.isArray(siteIds) ? siteIds : [];
-  for (const siteId of ids) {
-    const rec = targets[siteId];
-    if (!rec?.tabId) continue;
-    try {
-      await chrome.tabs.update(rec.tabId, { active: true });
-      if (rec.windowId != null) {
-        await chrome.windows.update(rec.windowId, { focused: true });
-      }
-      await delay(100);
-      await chrome.tabs.sendMessage(rec.tabId, { type: "OA_RUNTIME_NEW_CHAT" });
-    } catch (_e) {
-      /* ignore */
+  const job = async () => {
+    if (Array.isArray(siteEntries) && siteEntries.length) {
+      await syncTargetsFromTabsForSites(siteEntries);
     }
-  }
-  return { ok: true };
+    const targets = await loadTargets();
+    const ids = Array.isArray(siteIds) ? siteIds : [];
+    for (const siteId of ids) {
+      const rec = targets[siteId];
+      if (!rec?.tabId) continue;
+      try {
+        /*
+         * 必须短暂聚焦目标窗口再发消息：多数站点（尤其 Gemini）在后台标签页内点击「新对话」无效。
+         * 串行 await，且全局 __oaNewChatChain 串行，避免多路 newChat 并发抢焦点卡死。
+         */
+        if (rec.windowId != null) {
+          await chrome.windows.update(rec.windowId, { focused: true });
+        }
+        await chrome.tabs.update(rec.tabId, { active: true });
+        await delay(140);
+        await chrome.tabs.sendMessage(rec.tabId, { type: "OA_RUNTIME_NEW_CHAT" });
+        await delay(80);
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    return { ok: true };
+  };
+  const p = __oaNewChatChain.then(job);
+  __oaNewChatChain = p.catch(() => {});
+  return p;
 }
 
 /**
@@ -148,18 +161,23 @@ async function restoreHistoryUrlsToTargets(urls, siteEntries) {
     ([_, u]) => typeof u === "string" && /^https?:\/\//i.test(u.trim())
   );
   let navigated = 0;
-  await Promise.all(
-    entries.map(async ([siteId, url]) => {
-      const rec = targets[siteId];
-      if (!rec?.tabId) return;
-      try {
-        await chrome.tabs.update(rec.tabId, { url: url.trim() });
-        navigated += 1;
-      } catch (_e) {
-        /* ignore */
+  /* 串行 + 短暂聚焦：后台标签页仅改 URL 时部分站点（如 Gemini）会落到新会话或未完成加载 */
+  for (const [siteId, url] of entries) {
+    const rec = targets[siteId];
+    if (!rec?.tabId) continue;
+    try {
+      if (rec.windowId != null) {
+        await chrome.windows.update(rec.windowId, { focused: true });
       }
-    })
-  );
+      await chrome.tabs.update(rec.tabId, { active: true });
+      await delay(100);
+      await chrome.tabs.update(rec.tabId, { url: url.trim() });
+      navigated += 1;
+      await delay(60);
+    } catch (_e) {
+      /* ignore */
+    }
+  }
   return { ok: true, navigated };
 }
 

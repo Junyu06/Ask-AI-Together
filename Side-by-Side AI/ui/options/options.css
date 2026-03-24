@@ -36,18 +36,115 @@ body.options-page {
   margin: 0 0 20px;
 }
 
-body.options-page.options-embed .options-wrap {
-  padding: 12px 14px 24px;
-  max-width: none;
-}
-
 body.options-page.options-embed .options-intro,
 body.options-page.options-embed .options-embed-toggle {
   display: none;
 }
 
-body.options-page.options-embed .opt-section h2 {
-  font-size: 0.95rem;
+/*
+ * 网页内嵌 embed=1：主仓库 assets/styles.css .bubble 1:1（圆角、无额外 padding、input-row 来自主样式）。
+ * 默认仅输入条；「历史」视图时上方显示发送历史，底部仍为同一输入条。
+ */
+body.options-page.options-embed {
+  overflow: hidden;
+  background: transparent;
+  height: 100%;
+  min-height: 100%;
+}
+
+body.options-page.options-embed .options-header {
+  display: none !important;
+}
+
+body.options-page.options-embed:not(.options-embed-view-history) .opt-section:not(:has(#input-bubble)) {
+  display: none !important;
+}
+
+body.options-page.options-embed.options-embed-view-history .opt-section:not(:has(#input-bubble)):not([aria-label="发送历史"]) {
+  display: none !important;
+}
+
+body.options-page.options-embed .opt-section:has(#input-bubble) h2 {
+  display: none;
+}
+
+body.options-page.options-embed .options-wrap {
+  padding: 0;
+  margin: 0;
+  max-width: none;
+  height: 100%;
+  min-height: 100%;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+}
+
+body.options-page.options-embed .opt-section:has(#input-bubble) {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+body.options-page.options-embed.options-embed-view-history .opt-section[aria-label="发送历史"] {
+  display: flex !important;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px 0;
+  overflow: hidden;
+}
+
+body.options-page.options-embed.options-embed-view-history .opt-section[aria-label="发送历史"] > div:first-child {
+  flex-shrink: 0;
+}
+
+body.options-page.options-embed.options-embed-view-history .history-list-opt {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+/* 1:1 主仓库 .bubble */
+body.options-page.options-embed .bubble.opt-bubble {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  width: min(960px, calc(100vw - 36px));
+  max-width: none;
+  z-index: 120;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.options-page.options-embed .bubble.opt-bubble::before {
+  display: none;
+}
+
+body.options-page.options-embed .bubble.opt-bubble .drag-ring {
+  display: none;
+}
+
+body.options-page.options-embed .input-row {
+  grid-template-columns: auto 1fr auto;
+}
+
+body.options-page.options-embed .opt-embed-close-floating {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 200;
+  font-size: 13px;
+  padding: 4px 10px;
+}
+
+html:has(body.options-embed) {
+  background: transparent;
+  height: 100%;
 }
 
 .options-wrap {

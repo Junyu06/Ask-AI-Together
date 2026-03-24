@@ -71,7 +71,13 @@ const SITES = [
     homeUrl: "https://gemini.google.com/",
     inputSelectors: [".ql-editor", 'div[contenteditable="true"]', "textarea"],
     sendSelectors: ["button.submit", 'button[type="submit"]'],
-    newChatSelectors: ['[data-test-id="new-chat-button"]', 'a[href="/"]']
+    newChatSelectors: [
+      '[data-test-id="new-chat-button"]',
+      'button[aria-label*="New chat" i]',
+      'button[aria-label*="新聊天" i]',
+      '[role="button"][aria-label*="New chat" i]',
+      'a[href="/"]'
+    ]
   }
 ];
 

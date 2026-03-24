@@ -165,6 +165,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       });
     }
+
+    window.addEventListener("message", (ev) => {
+      if (ev.source !== window.parent) return;
+      if (ev.data?.source !== "oa-page-embed") return;
+      if (ev.data?.type === "OA_EMBED_VIEW") {
+        const v = ev.data.view === "history" ? "history" : "default";
+        document.body.classList.toggle("options-embed-view-history", v === "history");
+        if (v === "history") void renderHistoryPanel();
+        return;
+      }
+      if (ev.data?.type === "OA_EMBED_INVOKE") {
+        const action = ev.data.action;
+        if (action === "new-chat") document.getElementById("new-chat")?.click();
+        else if (action === "combine-latest") document.getElementById("combine-latest")?.click();
+      }
+    });
   }
 
   const embedToggle = document.getElementById("page-embed-fab-toggle");
