@@ -325,6 +325,15 @@ document.getElementById("controller-open-switcher").addEventListener("click", ()
   setSendStatus("已请求打开常驻切换小窗（可拖到角落，关闭即退出）。");
 });
 
+document.getElementById("controller-open-switcher-pip").addEventListener("click", async () => {
+  try {
+    await openSwitcherAsDocumentPictureInPicture();
+    setSendStatus("已打开画中画常驻条（系统级置顶）。若未出现，请检查 Chrome 版本是否支持 Document PiP。");
+  } catch (e) {
+    setSendStatus(`画中画失败：${e?.message || String(e)}`);
+  }
+});
+
 async function init() {
   await loadStorage();
   applyPrefsToForm();

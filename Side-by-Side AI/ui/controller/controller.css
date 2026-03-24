@@ -1,4 +1,4 @@
-/* 分屏页 styles.css 里 body 使用 overflow:hidden；控制器页必须可滚动，否则工具栏会被裁在视口外 */
+/* styles.css 默认 body 偏分屏场景；控制器页用 .controller-page 覆盖为可滚动 */
 body.controller-page {
   --controller-pad: 20px;
   overflow-x: hidden;

@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>控制器 · 多窗口</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="controller.css" />
   </head>
   <body class="controller-page">
     <header class="controller-header">
       <h1 class="controller-title">多窗口控制器</h1>
       <p class="controller-sub">
-        每个 AI 在独立浏览器窗口中打开（非 iframe）。已手动打开的 AI 标签页会自动绑定；若多个 AI 在同一窗口里，点「平铺」会把标签拆成多个窗口再排列。分屏 iframe 仍可从扩展菜单打开。
+        每个 AI 在独立浏览器窗口中打开。已手动打开的 AI 标签页会自动绑定；若多个 AI 在同一窗口里，点「平铺」会把标签拆成多个窗口再排列。
       </p>
     </header>
 
@@ -63,7 +63,12 @@
         <button type="button" class="btn btn-primary" id="controller-send">发送</button>
         <button type="button" class="btn btn-ghost" id="controller-new-chat">新对话</button>
         <button type="button" class="btn btn-ghost" id="controller-refresh">刷新状态</button>
-        <button type="button" class="btn btn-ghost" id="controller-open-switcher">常驻切换小窗</button>
+        <button type="button" class="btn btn-ghost" id="controller-open-switcher" title="独立浏览器小窗；在 AI 网页上更推荐用扩展图标吸边嵌入">
+          独立小窗（传统）
+        </button>
+        <button type="button" class="btn btn-primary" id="controller-open-switcher-pip" title="画中画可系统级置顶，macOS 推荐">
+          画中画常驻条
+        </button>
       </div>
       <p id="controller-send-status" class="controller-send-status" role="status" aria-live="polite"></p>
     </section>
@@ -79,6 +84,7 @@
       ></textarea>
     </section>
 
+    <script src="../../assets/switcher-pip.js"></script>
     <script src="controller.js"></script>
   </body>
 </html>
