@@ -140,13 +140,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "OA_BG_CLOSE_TARGETS") {
-    closeTargets(msg.siteIds, msg.sites)
-      .then(sendResponse)
-      .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
-    return true;
-  }
-
   if (msg.type === "OA_BG_CLOSE_ALL_TARGETS") {
     closeAllTargets()
       .then(sendResponse)
@@ -186,25 +179,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     getState(msg.sites)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
-    return true;
-  }
-
-  if (msg.type === "OA_BG_OPEN_CONTROLLER" || msg.type === "OA_BG_OPEN_SWITCHER") {
-    openSelectedAisTiled()
-      .then(() => sendResponse({ ok: true }))
-      .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
-    return true;
-  }
-
-  if (msg.type === "OA_BG_OPEN_OPTIONS_PAGE") {
-    chrome.runtime.openOptionsPage(() => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        sendResponse({ ok: false, error: String(err.message || err) });
-        return;
-      }
-      sendResponse({ ok: true });
-    });
     return true;
   }
 
