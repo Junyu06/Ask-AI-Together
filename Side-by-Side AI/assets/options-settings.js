@@ -148,15 +148,22 @@
     siteListEl.innerHTML = "";
     orderedSites().forEach((site) => {
       const li = document.createElement("li");
-      li.className = "controller-site-row";
+      li.className = "site-card";
       const checked = selectedSiteIds.includes(site.id);
       li.innerHTML = `
-      <label class="controller-site-label">
-        <input type="checkbox" value="${escapeHtml(site.id)}" ${checked ? "checked" : ""} />
-        <span class="controller-site-name">${escapeHtml(site.name)}</span>
-        <span class="controller-site-url">${escapeHtml(site.url)}</span>
-      </label>
-    `;
+        <label class="site-checkbox-content controller-site-label">
+          <span class="left-section">
+            <span class="toggle-switch">
+              <input type="checkbox" value="${escapeHtml(site.id)}" ${checked ? "checked" : ""} />
+              <span class="slider"></span>
+            </span>
+            <span>
+              <span class="site-main-name controller-site-name">${escapeHtml(site.name)}</span>
+              <span class="site-sub-name controller-site-url">${escapeHtml(site.url)}</span>
+            </span>
+          </span>
+        </label>
+      `;
       siteListEl.appendChild(li);
     });
 

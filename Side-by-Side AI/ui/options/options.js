@@ -2,9 +2,27 @@
 
 const STORAGE_HISTORY = "oa_history";
 const STORAGE_THEME_MODE = "oa_theme_mode";
+const STORAGE_LOCALE_MODE = "oa_locale_mode";
 
 /** @type {boolean} */
 let promptIsComposing = false;
+let pendingPanelCloseTimer = 0;
+
+function notifyEmbedMode(mode) {
+  if (!document.body.classList.contains("options-embed")) return;
+  try {
+    window.parent.postMessage(
+      {
+        type: "OA_EMBED_MODE",
+        mode: mode === "history" || mode === "settings" ? mode : "default",
+        source: "oa-options-embed"
+      },
+      "*"
+    );
+  } catch (_e) {
+    /* ignore */
+  }
+}
 
 function escapeHtml(str) {
   return String(str)
@@ -29,19 +47,107 @@ function formatTime(ts) {
   }).format(new Date(ts));
 }
 
+function runPanelOpenAnimation(panelEl) {
+  if (!panelEl) return;
+  if (pendingPanelCloseTimer) {
+    window.clearTimeout(pendingPanelCloseTimer);
+    pendingPanelCloseTimer = 0;
+  }
+  panelEl.classList.remove("hidden", "panel-closing");
+  panelEl.classList.add("panel-open-initial");
+  requestAnimationFrame(() => {
+    panelEl.classList.remove("panel-open-initial");
+  });
+}
+
+function openSettingsPanel(tab = "sites") {
+  document.getElementById("history-panel")?.classList.add("hidden");
+  switchSettingsTab(tab);
+  notifyEmbedMode("settings");
+  const backdropEl = document.getElementById("panel-backdrop");
+  if (backdropEl) {
+    backdropEl.classList.remove("hidden", "panel-closing");
+    backdropEl.classList.add("panel-open-initial");
+    requestAnimationFrame(() => backdropEl.classList.remove("panel-open-initial"));
+  }
+  runPanelOpenAnimation(document.getElementById("right-panel"));
+}
+
+function openHistoryPanel() {
+  document.getElementById("right-panel")?.classList.add("hidden");
+  notifyEmbedMode("history");
+  const backdropEl = document.getElementById("panel-backdrop");
+  if (backdropEl) {
+    backdropEl.classList.remove("hidden", "panel-closing");
+    backdropEl.classList.add("panel-open-initial");
+    requestAnimationFrame(() => backdropEl.classList.remove("panel-open-initial"));
+  }
+  runPanelOpenAnimation(document.getElementById("history-panel"));
+}
+
+function closePanels() {
+  const backdropEl = document.getElementById("panel-backdrop");
+  const rightPanelEl = document.getElementById("right-panel");
+  const historyPanelEl = document.getElementById("history-panel");
+
+  if (!backdropEl || !rightPanelEl || !historyPanelEl) return;
+
+  rightPanelEl.classList.add("panel-closing");
+  historyPanelEl.classList.add("panel-closing");
+  backdropEl.classList.add("panel-closing");
+
+  let closed = false;
+  const finalizeClose = () => {
+    if (closed) return;
+    closed = true;
+    backdropEl.removeEventListener("transitionend", onClosed);
+    rightPanelEl.classList.add("hidden");
+    historyPanelEl.classList.add("hidden");
+    backdropEl.classList.add("hidden");
+    rightPanelEl.classList.remove("panel-closing");
+    historyPanelEl.classList.remove("panel-closing");
+    backdropEl.classList.remove("panel-closing");
+    notifyEmbedMode("default");
+  };
+
+  const onClosed = (ev) => {
+    if (ev.target !== backdropEl) return;
+    finalizeClose();
+  };
+
+  backdropEl.addEventListener("transitionend", onClosed);
+  if (pendingPanelCloseTimer) window.clearTimeout(pendingPanelCloseTimer);
+  pendingPanelCloseTimer = window.setTimeout(() => {
+    pendingPanelCloseTimer = 0;
+    finalizeClose();
+  }, 120);
+}
+
+function switchSettingsTab(tab) {
+  document.querySelectorAll(".sidebar-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.settingsTab === tab);
+  });
+
+  document.querySelectorAll(".settings-tab").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.tab === tab);
+  });
+}
+
 function setSendStatus(text) {
   const el = document.getElementById("send-status");
   if (!el) return;
   el.textContent = text || "";
-  if (text) el.classList.remove("hidden");
-  else el.classList.add("hidden");
+  el.classList.toggle("hidden", !text);
+  el.classList.toggle("is-active", !!text);
 }
 
 function autoResizePrompt() {
   const promptEl = document.getElementById("prompt");
   if (!promptEl) return;
   promptEl.style.height = "auto";
-  promptEl.style.height = `${Math.min(promptEl.scrollHeight, 240)}px`;
+  const nextHeight = Math.min(Math.max(promptEl.scrollHeight, 40), 240);
+  promptEl.style.height = `${nextHeight}px`;
+  promptEl.style.overflowY = promptEl.scrollHeight > 240 ? "auto" : "hidden";
 }
 
 function normalizeCollectedResponseText(text) {
@@ -83,14 +189,18 @@ async function applyOptionsTheme() {
   document.documentElement.setAttribute("data-theme", effective);
 }
 
-async function syncPreferenceControls() {
+async function syncThemeControls() {
   const data = await chrome.storage.local.get([STORAGE_THEME_MODE]);
-  const themeEl = document.getElementById("options-theme-mode");
-  if (themeEl) themeEl.value = data[STORAGE_THEME_MODE] || "system";
-  const localeEl = document.getElementById("options-locale-mode");
-  if (localeEl && window.OA_OPTIONS_I18N?.getLocaleMode) {
-    localeEl.value = window.OA_OPTIONS_I18N.getLocaleMode();
-  }
+  const mode = data[STORAGE_THEME_MODE] || "system";
+  const radio = document.querySelector(`input[name="theme-mode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+}
+
+async function syncLocaleControls() {
+  const data = await chrome.storage.local.get([STORAGE_LOCALE_MODE]);
+  const mode = data[STORAGE_LOCALE_MODE] || "auto";
+  const radio = document.querySelector(`input[name="locale-mode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
 }
 
 async function loadHistoryRaw() {
@@ -109,7 +219,7 @@ async function deleteHistoryEntry(entryId) {
 }
 
 async function renderHistoryPanel() {
-  const listEl = document.getElementById("history-panel-list");
+  const listEl = document.getElementById("history-list");
   if (!listEl) return;
   const historyCache = await loadHistoryRaw();
   listEl.innerHTML = "";
@@ -181,36 +291,30 @@ async function renderHistoryPanel() {
 document.addEventListener("DOMContentLoaded", async () => {
   await window.OA_OPTIONS_I18N?.ready?.();
   await applyOptionsTheme();
-  await syncPreferenceControls();
+  await syncThemeControls();
+  await syncLocaleControls();
+  await renderHistoryPanel();
 
   const embedMode = new URLSearchParams(location.search).get("embed") === "1";
   if (embedMode) {
     document.body.classList.add("options-embed");
-    const closeBtn = document.getElementById("opt-embed-close");
-    if (closeBtn) {
-      closeBtn.hidden = false;
-      closeBtn.addEventListener("click", () => {
-        try {
-          window.parent.postMessage({ type: "OA_EMBED_CLOSE", source: "oa-options-embed" }, "*");
-        } catch (_e) {
-          /* ignore */
-        }
-      });
-    }
-
     window.addEventListener("message", (ev) => {
       if (ev.source !== window.parent) return;
       if (ev.data?.source !== "oa-page-embed") return;
       if (ev.data?.type === "OA_EMBED_VIEW") {
-        const v = ev.data.view === "history" ? "history" : "default";
-        document.body.classList.toggle("options-embed-view-history", v === "history");
-        if (v === "history") void renderHistoryPanel();
+        const view = ev.data.view === "history" ? "history" : "default";
+        if (view === "history") openHistoryPanel();
+        else closePanels();
         return;
       }
       if (ev.data?.type === "OA_EMBED_INVOKE") {
         const action = ev.data.action;
         if (action === "new-chat") document.getElementById("new-chat")?.click();
-        else if (action === "combine-latest") document.getElementById("combine-latest")?.click();
+        if (action === "combine-latest") document.getElementById("combine-latest")?.click();
+        if (action === "tile") document.getElementById("sw-tile")?.click();
+        if (action === "open-settings") {
+          openSettingsPanel(ev.data.tab || "sites");
+        }
       }
     });
 
@@ -230,36 +334,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  document.addEventListener("keydown", (e) => {
-    if (!embedMode || e.key !== "Escape") return;
-    try {
-      window.parent.postMessage({ type: "OA_EMBED_CLOSE", source: "oa-options-embed" }, "*");
-    } catch (_e) {
-      /* ignore */
-    }
-  });
+  document.getElementById("site-settings-btn")?.addEventListener("click", () => openSettingsPanel("sites"));
+  document.getElementById("history-btn")?.addEventListener("click", openHistoryPanel);
+  document.getElementById("panel-close")?.addEventListener("click", closePanels);
+  document.getElementById("history-close")?.addEventListener("click", closePanels);
+  document.getElementById("panel-backdrop")?.addEventListener("click", closePanels);
 
-  void renderQuickFocus("opt-targets");
-  void renderHistoryPanel();
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes[STORAGE_HISTORY]) return;
-    void renderHistoryPanel();
-  });
-
-  document.getElementById("opt-refresh-focus")?.addEventListener("click", () => {
-    void renderQuickFocus("opt-targets");
-    window.__oaRefreshOptionsSettings?.();
-  });
-
-  document.getElementById("hero-open-tile")?.addEventListener("click", () => {
-    window.__oaOptionsOpenAndTile?.();
-  });
-  document.getElementById("hero-retile")?.addEventListener("click", () => {
-    window.__oaOptionsRetile?.();
-  });
-  document.getElementById("hero-close-targets")?.addEventListener("click", () => {
-    window.__oaOptionsCloseTargets?.();
+  document.querySelectorAll(".sidebar-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      switchSettingsTab(item.dataset.settingsTab || "sites");
+    });
   });
 
   document.getElementById("history-clear-all")?.addEventListener("click", async () => {
@@ -267,36 +351,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     await renderHistoryPanel();
   });
 
-  document.getElementById("options-theme-mode")?.addEventListener("change", async (event) => {
-    const value = event.target?.value;
-    const mode = value === "light" || value === "dark" ? value : "system";
-    await chrome.storage.local.set({ [STORAGE_THEME_MODE]: mode });
-    await applyOptionsTheme();
+  document.querySelectorAll('input[name="theme-mode"]').forEach((input) => {
+    input.addEventListener("change", async () => {
+      if (!input.checked) return;
+      await chrome.storage.local.set({ [STORAGE_THEME_MODE]: input.value });
+      await applyOptionsTheme();
+    });
   });
 
-  document.getElementById("options-locale-mode")?.addEventListener("change", async (event) => {
-    const value = event.target?.value;
-    const mode = value === "zh" || value === "en" ? value : "auto";
-    await window.OA_OPTIONS_I18N?.setLocaleMode?.(mode);
-    await syncPreferenceControls();
-    await renderHistoryPanel();
-    void renderQuickFocus("opt-targets");
-    window.__oaRefreshOptionsSettings?.();
+  document.querySelectorAll('input[name="locale-mode"]').forEach((input) => {
+    input.addEventListener("change", async () => {
+      if (!input.checked) return;
+      await window.OA_OPTIONS_I18N?.setLocaleMode?.(input.value);
+      await syncLocaleControls();
+      await renderHistoryPanel();
+      window.__oaRefreshOptionsSettings?.();
+    });
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes[STORAGE_HISTORY]) void renderHistoryPanel();
+    if (changes[STORAGE_THEME_MODE]) void applyOptionsTheme();
   });
 
   const promptEl = document.getElementById("prompt");
   const combineLatestBtnEl = document.getElementById("combine-latest");
 
   document.getElementById("combine-latest")?.addEventListener("click", async () => {
+    closePanels();
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
       setSendStatus(t("status_pick_sites"));
       return;
     }
-    if (combineLatestBtnEl) {
-      combineLatestBtnEl.disabled = true;
-    }
+    if (combineLatestBtnEl) combineLatestBtnEl.disabled = true;
     setSendStatus(t("status_combining"));
     try {
       const res = await chrome.runtime.sendMessage({
@@ -322,6 +412,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("new-chat")?.addEventListener("click", async () => {
+    closePanels();
     const sites = await loadOrderedSelectedSitesPayload();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
@@ -379,17 +470,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   promptEl?.addEventListener("compositionend", () => {
     promptIsComposing = false;
   });
+  promptEl?.addEventListener("input", autoResizePrompt);
 
-  promptEl?.addEventListener("input", () => {
-    autoResizePrompt();
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const rightPanelHidden = document.getElementById("right-panel")?.classList.contains("hidden");
+    const historyPanelHidden = document.getElementById("history-panel")?.classList.contains("hidden");
+    if (!rightPanelHidden || !historyPanelHidden) {
+      closePanels();
+      return;
+    }
+    if (!embedMode) return;
+    try {
+      window.parent.postMessage({ type: "OA_EMBED_CLOSE", source: "oa-options-embed" }, "*");
+    } catch (_e) {
+      /* ignore */
+    }
   });
 
   autoResizePrompt();
 });
 
-window.addEventListener("oa-options-locale-changed", () => {
-  void renderHistoryPanel();
-  void renderQuickFocus("opt-targets");
+window.addEventListener("oa-options-locale-changed", async () => {
+  await renderHistoryPanel();
+  await syncThemeControls();
+  await syncLocaleControls();
+  window.__oaRefreshOptionsSettings?.();
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
