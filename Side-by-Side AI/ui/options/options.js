@@ -509,11 +509,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
-  document.querySelectorAll('input[name="launch-mode"]').forEach((input) => {
-    input.addEventListener("change", async () => {
-      if (!input.checked) return;
-      await chrome.storage.local.set({ [STORAGE_LAUNCH_MODE]: input.value });
-    });
+  document.getElementById("mode-save-btn")?.addEventListener("click", async () => {
+    const selected = document.querySelector('input[name="launch-mode"]:checked');
+    if (!selected) return;
+    await chrome.storage.local.set({ [STORAGE_LAUNCH_MODE]: selected.value });
+    const statusEl = document.getElementById("mode-save-status");
+    if (statusEl) {
+      statusEl.textContent = t("mode_saved");
+      window.setTimeout(() => { statusEl.textContent = ""; }, 3000);
+    }
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {

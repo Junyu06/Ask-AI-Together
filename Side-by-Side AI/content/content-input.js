@@ -18,8 +18,15 @@ function setInputValue(el, text, siteId = "") {
   const tag = el.tagName;
   if (tag === "TEXTAREA" || tag === "INPUT") {
     el.focus();
-    el.value = payload;
+    const proto = tag === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    if (nativeSetter) {
+      nativeSetter.call(el, payload);
+    } else {
+      el.value = payload;
+    }
     el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
   }
 
@@ -190,9 +197,10 @@ function clickSend(site, inputEl) {
   const btn = findFirst(site.sendSelectors);
   if (btn) {
     const ariaDisabled = String(btn.getAttribute("aria-disabled") || "").toLowerCase() === "true";
-    if (btn.disabled || ariaDisabled) return false;
-    btn.click();
-    return true;
+    if (!btn.disabled && !ariaDisabled) {
+      btn.click();
+      return true;
+    }
   }
 
   if (!inputEl) return false;

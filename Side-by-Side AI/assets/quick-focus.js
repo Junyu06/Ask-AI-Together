@@ -9,7 +9,8 @@ const QF_SITE_LABELS = {
   yuanbao: "Yuanbao",
   grok: "Grok",
   claude: "Claude",
-  gemini: "Gemini"
+  gemini: "Gemini",
+  perplexity: "Perplexity"
 };
 
 const QF_BUILTIN_SITES = [
@@ -21,7 +22,8 @@ const QF_BUILTIN_SITES = [
   { id: "yuanbao", url: "https://yuanbao.tencent.com/" },
   { id: "grok", url: "https://grok.com/" },
   { id: "claude", url: "https://claude.ai/" },
-  { id: "gemini", url: "https://gemini.google.com/" }
+  { id: "gemini", url: "https://gemini.google.com/" },
+  { id: "perplexity", url: "https://www.perplexity.ai/" }
 ];
 
 function qfEscapeHtml(str) {

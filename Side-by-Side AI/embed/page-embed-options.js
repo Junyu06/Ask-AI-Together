@@ -542,11 +542,11 @@ document.addEventListener("keydown", (e) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!msg || msg.type !== "OA_PAGE_EMBED_OPEN_SWITCHER") return false;
   if (!embedContextValid) {
     sendResponse?.({ ok: false, reason: "context-invalidated" });
     return false;
   }
-  if (!msg || msg.type !== "OA_PAGE_EMBED_OPEN_SWITCHER") return false;
   void (async () => {
     if (!hostMatchesEmbed(location.hostname) || !(await isEmbedEnabledInStorage())) {
       sendResponse({ ok: false, reason: "disabled-or-host" });
