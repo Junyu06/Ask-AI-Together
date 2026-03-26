@@ -3,6 +3,7 @@
 const STORAGE_HISTORY = "oa_history";
 const STORAGE_THEME_MODE = "oa_theme_mode";
 const STORAGE_LOCALE_MODE = "oa_locale_mode";
+const STORAGE_LAUNCH_MODE = "oa_mode";
 
 /** @type {boolean} */
 let promptIsComposing = false;
@@ -20,6 +21,21 @@ function notifyEmbedMode(mode) {
       },
       "*"
     );
+  } catch (_e) {
+    /* ignore */
+  }
+  if (mode !== "history" && mode !== "settings") {
+    requestAnimationFrame(() => notifyEmbedHeight());
+  }
+}
+
+function notifyEmbedHeight() {
+  if (!document.body.classList.contains("options-embed")) return;
+  const bubbleEl = document.getElementById("input-bubble");
+  if (!bubbleEl) return;
+  const h = bubbleEl.offsetHeight + 30; // 22px bottom offset + 8px buffer
+  try {
+    window.parent.postMessage({ type: "OA_EMBED_HEIGHT", height: h, source: "oa-options-embed" }, "*");
   } catch (_e) {
     /* ignore */
   }
@@ -183,6 +199,7 @@ function autoResizePrompt() {
   const nextHeight = Math.min(Math.max(promptEl.scrollHeight, 40), 240);
   promptEl.style.height = `${nextHeight}px`;
   promptEl.style.overflowY = promptEl.scrollHeight > 240 ? "auto" : "hidden";
+  notifyEmbedHeight();
 }
 
 function normalizeCollectedResponseText(text) {
@@ -317,6 +334,13 @@ async function syncLocaleControls() {
   if (radio) radio.checked = true;
 }
 
+async function syncModeControls() {
+  const data = await chrome.storage.local.get([STORAGE_LAUNCH_MODE]);
+  const mode = data[STORAGE_LAUNCH_MODE] === "windows" ? "windows" : "legacy";
+  const radio = document.querySelector(`input[name="launch-mode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+}
+
 async function loadHistoryRaw() {
   const data = await chrome.storage.local.get([STORAGE_HISTORY]);
   return Array.isArray(data[STORAGE_HISTORY]) ? data[STORAGE_HISTORY] : [];
@@ -407,6 +431,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await applyOptionsTheme();
   await syncThemeControls();
   await syncLocaleControls();
+  await syncModeControls();
   await renderHistoryPanel();
 
   const embedMode = new URLSearchParams(location.search).get("embed") === "1";
@@ -434,6 +459,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     try {
       window.parent.postMessage({ type: "OA_EMBED_READY", source: "oa-options-embed" }, "*");
+      requestAnimationFrame(() => notifyEmbedHeight());
     } catch (_e) {
       /* ignore */
     }
@@ -480,6 +506,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       await syncLocaleControls();
       await renderHistoryPanel();
       window.__oaRefreshOptionsSettings?.();
+    });
+  });
+
+  document.querySelectorAll('input[name="launch-mode"]').forEach((input) => {
+    input.addEventListener("change", async () => {
+      if (!input.checked) return;
+      await chrome.storage.local.set({ [STORAGE_LAUNCH_MODE]: input.value });
     });
   });
 
@@ -583,6 +616,7 @@ window.addEventListener("oa-options-locale-changed", async () => {
   await renderHistoryPanel();
   await syncThemeControls();
   await syncLocaleControls();
+  await syncModeControls();
   window.__oaRefreshOptionsSettings?.();
 });
 

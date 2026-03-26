@@ -19,7 +19,9 @@
     "https://yuanbao.tencent.com/*",
     "https://grok.com/*",
     "https://claude.ai/*",
-    "https://gemini.google.com/*"
+    "https://gemini.google.com/*",
+    "https://www.perplexity.ai/*",
+    "https://perplexity.ai/*"
   ],
   "optional_host_permissions": [
     "https://*/*",
@@ -40,6 +42,17 @@
     "open_in_tab": true
   },
   "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "legacy/content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle",
+      "match_about_blank": true
+    },
     {
       "matches": [
         "<all_urls>"
@@ -70,7 +83,9 @@
         "https://yuanbao.tencent.com/*",
         "https://grok.com/*",
         "https://claude.ai/*",
-        "https://gemini.google.com/*"
+        "https://gemini.google.com/*",
+        "https://www.perplexity.ai/*",
+        "https://perplexity.ai/*"
       ],
       "js": [
         "embed/page-embed-options.js"
@@ -89,7 +104,10 @@
         "assets/quick-focus.js",
         "assets/options-i18n.js",
         "assets/options-settings.js",
-        "ui/controller/controller.css"
+        "ui/controller/controller.css",
+        "legacy/index.html",
+        "legacy/app.js",
+        "legacy/styles.css"
       ],
       "matches": [
         "<all_urls>"

@@ -21,7 +21,8 @@
     { id: "yuanbao", name: "Yuanbao", url: "https://yuanbao.tencent.com/" },
     { id: "grok", name: "Grok", url: "https://grok.com/" },
     { id: "claude", name: "Claude", url: "https://claude.ai/" },
-    { id: "gemini", name: "Gemini", url: "https://gemini.google.com/" }
+    { id: "gemini", name: "Gemini", url: "https://gemini.google.com/" },
+    { id: "perplexity", name: "Perplexity", url: "https://www.perplexity.ai/" }
   ];
 
   let customSites = [];

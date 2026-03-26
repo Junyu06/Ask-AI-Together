@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Side-by-Side AI</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a href="#prompt" class="skip-link" data-i18n="skip_to_input">跳过到输入框</a>
+    <div id="panes" class="panes"></div>
+    <div id="panel-backdrop" class="panel-backdrop hidden" aria-hidden="true"></div>
+    <div id="pane-focus-backdrop" class="panel-backdrop pane-focus-backdrop hidden" aria-hidden="true"></div>
+
+    <section id="input-bubble" class="bubble bubble-input" aria-label="输入与操作" data-i18n-aria-label="input_bubble_aria">
+      <p id="send-status" class="send-status hidden" role="status" aria-live="polite"></p>
+      <div class="input-row">
+        <div class="left-actions" aria-label="工具栏" data-i18n-aria-label="toolbar_aria">
+          <button id="site-settings-btn" class="btn btn-icon btn-ghost" type="button" aria-label="设置" title="设置" data-i18n-aria-label="settings_title" data-i18n-title="settings_title">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <button id="history-btn" class="btn btn-icon btn-ghost" type="button" aria-label="历史记录" title="历史记录" data-i18n-aria-label="history_title" data-i18n-title="history_title">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+          </button>
+          <button id="combine-latest" class="btn btn-icon btn-ghost btn-summary" type="button" aria-label="汇总最新回复" title="汇总最新回复" data-i18n-aria-label="combine_latest" data-i18n-title="combine_latest">
+            <svg class="icon icon-summary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 4.5c1.4 2.9 2.1 3.6 5 5-2.9 1.4-3.6 2.1-5 5-1.4-2.9-2.1-3.6-5-5 2.9-1.4 3.6-2.1 5-5Z"/>
+              <path d="M18.4 14.6c.6 1.2.9 1.5 2.1 2.1-1.2.6-1.5.9-2.1 2.1-.6-1.2-.9-1.5-2.1-2.1 1.2-.6 1.5-.9 2.1-2.1Z"/>
+              <path d="M6 15.8c.5 1 .8 1.2 1.8 1.8-1 .5-1.3.8-1.8 1.8-.5-1-.8-1.3-1.8-1.8 1-.5 1.3-.8 1.8-1.8Z"/>
+            </svg>
+            <span class="visually-hidden" data-i18n="combine_latest">汇总最新回复</span>
+          </button>
+          <button id="new-chat" class="btn btn-ghost btn-new-chat" type="button" aria-label="新对话" title="新对话" data-i18n-aria-label="new_chat" data-i18n-title="new_chat">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            <span data-i18n="new_chat">新聊天</span>
+          </button>
+        </div>
+        <div class="prompt-wrap">
+          <div id="attachment-chips" class="attachment-chips hidden" aria-label="已添加附件"></div>
+          <div id="mention-chips" class="mention-chips hidden" aria-label="已选择站点" data-i18n-aria-label="selected_sites"></div>
+          <label for="prompt" class="visually-hidden" data-i18n="prompt_label">输入问题</label>
+          <textarea id="prompt" name="prompt" autocomplete="off" placeholder="输入问题，@ 单独 AI，# 放大 AI；回车发送（Shift+Enter 换行）" rows="1" aria-label="输入问题" data-i18n-placeholder="prompt_placeholder_default" data-i18n-aria-label="prompt_label"></textarea>
+          <div id="mention-dropdown" class="mention-dropdown hidden" aria-hidden="true"></div>
+        </div>
+        <button id="send" class="btn btn-icon btn-primary btn-send" type="button" aria-label="发送" title="发送" data-i18n-aria-label="send" data-i18n-title="send">
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v12" /><path d="m7.5 10.5 4.5-4.5 4.5 4.5" /></svg>
+        </button>
+      </div>
+      <div class="drag-ring" aria-hidden="true"></div>
+    </section>
+
+    <aside id="right-panel" class="right-panel hidden" role="dialog" aria-modal="true" aria-labelledby="panel-title">
+      <div class="panel-head">
+        <h2 id="panel-title" data-i18n="settings_title">设置</h2>
+        <button id="panel-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="close" data-i18n-title="close">
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div class="panel-body">
+        <nav class="settings-sidebar" aria-label="设置类别" data-i18n-aria-label="settings_categories">
+          <button class="sidebar-item" data-settings-tab="mode" type="button" data-i18n="mode_tab">模式</button>
+          <button class="sidebar-item active" data-settings-tab="sites" type="button" data-i18n="sites_tab">站点</button>
+          <button class="sidebar-item" data-settings-tab="layout" type="button" data-i18n="layout_tab">布局</button>
+          <button class="sidebar-item" data-settings-tab="appearance" type="button" data-i18n="appearance_tab">外观</button>
+          <button class="sidebar-item" data-settings-tab="language" type="button" data-i18n="language_mode">语言</button>
+          <button class="sidebar-item" data-settings-tab="history" type="button" data-i18n="history_settings_tab">历史显示</button>
+          <button class="sidebar-item" data-settings-tab="usage" type="button" data-i18n="usage_tab">使用说明</button>
+          <button class="sidebar-item" data-settings-tab="about" type="button" data-i18n="about_tab">关于</button>
+        </nav>
+        <section id="settings-content" class="settings-content">
+          <div id="settings-tab-mode" class="settings-tab" data-tab="mode">
+            <p class="floating-window-subtitle" data-i18n="mode_subtitle">选择点击扩展图标时的启动模式。</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input type="radio" name="launch-mode" value="legacy" />
+                <span data-i18n="mode_legacy">分屏页（Legacy，默认）</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="launch-mode" value="windows" />
+                <span data-i18n="mode_windows">多窗口平铺（Windows）</span>
+              </label>
+            </div>
+            <p class="floating-window-subtitle" data-i18n="mode_hint">分屏页在同一标签页内以 iframe 并排展示各 AI；多窗口平铺会为每个 AI 打开独立浏览器窗口。</p>
+          </div>
+
+          <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">
+            <p class="floating-window-subtitle" data-i18n="sites_subtitle">站点选择与排序</p>
+            <ul id="site-checkboxes" class="site-checkboxes"></ul>
+            <div class="floating-window-foot">
+              <button id="save-sites" class="btn btn-ghost" type="button" data-i18n="save">保存</button>
+              <button id="toggle-custom-site" class="btn btn-primary" type="button" data-i18n="add_site">添加站点</button>
+            </div>
+            <div id="custom-site-form" class="custom-site-form hidden">
+              <label for="custom-site-name" class="visually-hidden" data-i18n="site_name">站点名称</label>
+              <input id="custom-site-name" name="site-name" type="text" autocomplete="off" placeholder="站点名称，例如 Perplexity" aria-label="站点名称" data-i18n-placeholder="site_name_placeholder" data-i18n-aria-label="site_name" />
+              <label for="custom-site-url" class="visually-hidden" data-i18n="site_url">站点地址</label>
+              <input id="custom-site-url" name="site-url" type="url" autocomplete="url" placeholder="站点地址，例如 https://www.perplexity.ai/" aria-label="站点地址" data-i18n-placeholder="site_url_placeholder" data-i18n-aria-label="site_url" />
+              <div class="custom-site-actions">
+                <button id="cancel-custom-site" class="btn btn-ghost" type="button" data-i18n="cancel">取消</button>
+                <button id="add-custom-site" class="btn btn-primary" type="button" data-i18n="add">添加</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="settings-tab-layout" class="settings-tab" data-tab="layout">
+            <p class="floating-window-subtitle" data-i18n="panes_per_row">每排站点数</p>
+            <div class="theme-options panes-per-row-options">
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="0" />
+                <span data-i18n="panes_per_row_all">全部并排</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="1" />
+                <span data-i18n="panes_per_row_1">1 个</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="2" />
+                <span data-i18n="panes_per_row_2">2 个</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="3" />
+                <span data-i18n="panes_per_row_3">3 个</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="panes-per-row" value="4" />
+                <span data-i18n="panes_per_row_4">4 个</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="settings-tab-appearance" class="settings-tab" data-tab="appearance">
+            <p class="floating-window-subtitle" data-i18n="theme_mode">主题模式</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input type="radio" name="theme-mode" value="system" />
+                <span data-i18n="theme_system">跟随系统</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="theme-mode" value="light" />
+                <span data-i18n="theme_light">白色</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="theme-mode" value="dark" />
+                <span data-i18n="theme_dark">黑色</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="settings-tab-about" class="settings-tab" data-tab="about">
+            <p class="floating-window-subtitle" data-i18n="about_subtitle">支持项目</p>
+            <p data-i18n="about_support_text">如果这个扩展对你有帮助，欢迎请我喝咖啡。</p>
+            <p>
+              <a href="https://buymeacoffee.com/junyu06" target="_blank" rel="noopener noreferrer" data-i18n="buy_me_a_coffee">Buy Me a Coffee</a>
+            </p>
+          </div>
+
+          <div id="settings-tab-language" class="settings-tab" data-tab="language">
+            <p class="floating-window-subtitle" data-i18n="language_mode">语言</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input type="radio" name="locale-mode" value="auto" />
+                <span data-i18n="language_auto">跟随浏览器</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="locale-mode" value="zh" />
+                <span data-i18n="language_zh">中文</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="locale-mode" value="en" />
+                <span data-i18n="language_en">English</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="settings-tab-history" class="settings-tab" data-tab="history">
+            <p class="floating-window-subtitle" data-i18n="history_settings_subtitle">历史标题显示策略</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input id="history-summary-enabled" type="checkbox" />
+                <span data-i18n="history_summary_enable">使用本地 Ollama 生成历史摘要</span>
+              </label>
+            </div>
+            <div id="history-summary-config" class="custom-site-form">
+              <label for="history-summary-url" class="visually-hidden" data-i18n="ollama_url">Ollama URL</label>
+              <input id="history-summary-url" name="ollama-url" type="url" autocomplete="url" placeholder="http://127.0.0.1:11434" aria-label="Ollama URL" data-i18n-placeholder="ollama_url_placeholder" data-i18n-aria-label="ollama_url" />
+              <label for="history-summary-model" class="visually-hidden" data-i18n="ollama_model">Ollama Model</label>
+              <input id="history-summary-model" name="ollama-model" type="text" autocomplete="off" placeholder="qwen2.5:7b-instruct" aria-label="Ollama Model" data-i18n-placeholder="ollama_model_placeholder" data-i18n-aria-label="ollama_model" spellcheck="false" />
+              <div class="custom-site-actions">
+                <button id="test-history-summary" class="btn btn-ghost" type="button" data-i18n="test_connection">测试连接</button>
+                <button id="save-history-summary" class="btn btn-primary" type="button" data-i18n="save">保存</button>
+              </div>
+              <p id="history-summary-test-result" class="history-summary-test-result hidden" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+
+          <div id="settings-tab-usage" class="settings-tab" data-tab="usage">
+            <p class="floating-window-subtitle" data-i18n="usage_subtitle">快捷键与输入规则</p>
+            <ul class="usage-list">
+              <li class="usage-alert"><span class="usage-alert-text" data-i18n="usage_login_first">先去各 AI 站点登录账号，再使用本 extension。</span></li>
+              <li><span class="usage-key"><kbd>@</kbd></span><span data-i18n="usage_shortcut_at">@ 选择单独 AI 作为发送目标</span></li>
+              <li><span class="usage-key"><kbd>#</kbd></span><span data-i18n="usage_shortcut_hash"># 选择并放大单个 AI</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.5c1.4 2.9 2.1 3.6 5 5-2.9 1.4-3.6 2.1-5 5-1.4-2.9-2.1-3.6-5-5 2.9-1.4 3.6-2.1 5-5Z"/><path d="M18.4 14.6c.6 1.2.9 1.5 2.1 2.1-1.2.6-1.5.9-2.1 2.1-.6-1.2-.9-1.5-2.1-2.1 1.2-.6 1.5-.9 2.1-2.1Z"/><path d="M6 15.8c.5 1 .8 1.2 1.8 1.8-1 .5-1.3.8-1.8 1.8-.5-1-.8-1.3-1.8-1.8 1-.5 1.3-.8 1.8-1.8Z"/></svg></span><span data-i18n="usage_icon_summary">汇总图标会抓取当前各 AI 最新回复，并整理到输入框里，供你继续写要求。</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span data-i18n="usage_icon_settings">设置图标用于选择站点、布局、语言和历史摘要配置。</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span><span data-i18n="usage_icon_history">历史图标用于查看并恢复之前保存的会话入口。</span></li>
+              <li><span class="usage-key"><svg class="usage-inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span data-i18n="usage_icon_new_chat">新聊天图标会通知当前已打开的站点新建会话。</span></li>
+              <li class="usage-alert"><span class="usage-alert-text" data-i18n="usage_long_text_warning">长文本在部分站点注入时会比较慢，浏览器偶尔出现“未响应”提示属于正常情况，请耐心等待。</span></li>
+              <li><span id="usage-shortcut-exit-key" class="usage-key"><kbd>Shift</kbd> + <kbd>Cmd</kbd> + <kbd>F</kbd></span><span data-i18n="usage_shortcut_exit">退出放大</span></li>
+              <li><span class="usage-key"><kbd>Enter</kbd></span><span data-i18n="usage_shortcut_send">Enter 发送消息</span></li>
+              <li><span class="usage-key"><kbd>Shift</kbd> + <kbd>Enter</kbd></span><span data-i18n="usage_shortcut_newline">Shift + Enter 换行</span></li>
+              <li><span class="usage-key"><kbd>↑</kbd> / <kbd>↓</kbd> + <kbd>Enter</kbd></span><span data-i18n="usage_shortcut_mention_nav">↑ / ↓ 切换 @/# 候选项，Enter 选中</span></li>
+              <li><span class="usage-key"><kbd>1</kbd> - <kbd>9</kbd></span><span data-i18n="usage_shortcut_mention_pick">数字 1-9 快速选中 @/# 候选项</span></li>
+              <li><span class="usage-key" data-i18n="usage_issues">问题反馈</span><a href="https://github.com/Junyu06/Ask-AI-Together/issues" target="_blank" rel="noopener noreferrer">https://github.com/Junyu06/Ask-AI-Together/issues</a></li>
+            </ul>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <aside id="history-panel" class="right-panel hidden" role="dialog" aria-modal="true" aria-labelledby="history-title">
+      <div class="panel-head">
+        <h2 id="history-title" data-i18n="history_title">历史</h2>
+        <div class="panel-head-actions">
+          <button id="history-clear" class="btn btn-ghost" type="button" data-i18n="clear">清空</button>
+          <button id="history-close" class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="close" data-i18n-title="close">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+      </div>
+      <div class="history-panel-body">
+        <p class="floating-window-subtitle" data-i18n="history_subtitle">点击历史中的站点链接可回到对应页面</p>
+        <ul id="history-list" class="history-list"></ul>
+      </div>
+    </aside>
+
+    <script src="app.js"></script>
+  </body>
+</html>

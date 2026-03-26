@@ -18,7 +18,9 @@ const EMBED_MATCH_HOST_SUFFIXES = [
   "yuanbao.tencent.com",
   "grok.com",
   "claude.ai",
-  "gemini.google.com"
+  "gemini.google.com",
+  "www.perplexity.ai",
+  "perplexity.ai"
 ];
 
 function hostMatchesEmbed(h) {
@@ -143,8 +145,8 @@ function injectEmbedStyles() {
       transform: translateX(-50%);
       width: min(960px, calc(100vw - 36px));
       max-width: 100vw;
-      height: min(420px, 55vh);
-      min-height: 240px;
+      height: 90px;
+      min-height: 80px;
       z-index: 2147483646;
       display: none;
       flex-direction: column;
@@ -154,15 +156,15 @@ function injectEmbedStyles() {
       overflow: visible;
     }
     #oa-embed-root.oa-open.oa-embed-root--history {
-      height: min(560px, 72vh);
-      min-height: 320px;
+      height: min(560px, 72vh) !important;
+      min-height: 320px !important;
     }
     #oa-embed-root.oa-open.oa-embed-root--settings {
-      width: calc(100vw - 8px);
-      max-width: calc(100vw - 8px);
-      height: calc(100vh - 8px);
-      min-height: calc(100vh - 8px);
-      bottom: 4px;
+      width: calc(100vw - 8px) !important;
+      max-width: calc(100vw - 8px) !important;
+      height: calc(100vh - 8px) !important;
+      min-height: calc(100vh - 8px) !important;
+      bottom: 4px !important;
     }
     #oa-embed-root.oa-open { display: flex; }
     #oa-embed-root iframe {
@@ -516,6 +518,16 @@ window.addEventListener("message", (ev) => {
   }
   if (ev.source === embedIframe?.contentWindow && ev.data?.type === "OA_EMBED_MODE" && ev.data?.source === "oa-options-embed") {
     setHostEmbedMode(ev.data.mode === "history" || ev.data.mode === "settings" ? ev.data.mode : "default");
+    return;
+  }
+  if (ev.source === embedIframe?.contentWindow && ev.data?.type === "OA_EMBED_HEIGHT" && ev.data?.source === "oa-options-embed") {
+    if (rootEl && !rootEl.classList.contains("oa-embed-root--history") && !rootEl.classList.contains("oa-embed-root--settings")) {
+      const h = Number(ev.data.height);
+      if (h > 0) {
+        rootEl.style.height = `${h}px`;
+        rootEl.style.minHeight = `${h}px`;
+      }
+    }
     return;
   }
   if (ev.data?.type === "OA_EMBED_CLOSE" && ev.data?.source === "oa-options-embed") {

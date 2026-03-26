@@ -87,6 +87,15 @@ const SITES = [
       '[role="button"][aria-label*="New chat" i]',
       'a[href="/"]'
     ]
+  },
+  {
+    id: "perplexity",
+    matchHosts: ["www.perplexity.ai", "perplexity.ai"],
+    homeUrl: "https://www.perplexity.ai/",
+    newChatUrl: "https://www.perplexity.ai/",
+    inputSelectors: ['textarea[placeholder]', 'div[contenteditable="true"]', "textarea"],
+    sendSelectors: ['button[aria-label*="Submit" i]', 'button[type="submit"]'],
+    newChatSelectors: ['a[href="/"]', 'button[aria-label*="New" i]']
   }
 ];
 
@@ -115,5 +124,6 @@ const RESPONSE_SELECTORS = {
   yuanbao: ['[data-role="assistant"]', '.agent-message', '.markdown-body'],
   grok: ['[data-testid*="assistant"]', '[data-message-author-role="assistant"]', '.prose'],
   claude: ['[data-is-streaming="false"] .font-claude-message', '[data-testid*="assistant"]', '.prose'],
-  gemini: ['message-content', '[data-response-id]', '.model-response-text', '.response-content']
+  gemini: ['message-content', '[data-response-id]', '.model-response-text', '.response-content'],
+  perplexity: ['.prose', '[data-testid="answer"]', '.markdown']
 };

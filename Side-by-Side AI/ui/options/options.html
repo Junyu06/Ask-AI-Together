@@ -42,12 +42,32 @@
       </div>
       <div class="panel-body">
         <nav class="settings-sidebar" aria-label="设置类别">
+          <button class="sidebar-item" data-settings-tab="mode" type="button" data-i18n="mode_tab">模式</button>
           <button class="sidebar-item active" data-settings-tab="sites" type="button" data-i18n="sites_tab">站点</button>
           <button class="sidebar-item" data-settings-tab="windows" type="button" data-i18n="window_layout_title">窗口</button>
           <button class="sidebar-item" data-settings-tab="appearance" type="button" data-i18n="appearance_tab">外观</button>
           <button class="sidebar-item" data-settings-tab="language" type="button" data-i18n="language_mode">语言</button>
         </nav>
         <section id="settings-content" class="settings-content">
+          <div id="settings-tab-mode" class="settings-tab" data-tab="mode">
+            <p class="floating-window-subtitle" data-i18n="mode_subtitle">选择点击扩展图标时的启动模式。</p>
+            <div class="theme-options">
+              <label class="theme-option">
+                <input type="radio" name="launch-mode" value="legacy" />
+                <span data-i18n="mode_legacy">分屏页（Legacy，默认）</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="launch-mode" value="windows" />
+                <span data-i18n="mode_windows">多窗口平铺（Windows）</span>
+              </label>
+            </div>
+            <p class="controller-hint" data-i18n="mode_hint">分屏页在同一标签页内以 iframe 并排展示各 AI；多窗口平铺会为每个 AI 打开独立浏览器窗口。</p>
+            <div class="controller-toolbar" style="margin-top:14px;">
+              <button type="button" id="mode-save-btn" class="btn btn-primary" data-i18n="save">保存</button>
+              <p id="mode-save-status" class="controller-send-status" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+
           <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">
             <p class="floating-window-subtitle" data-i18n="sites_subtitle">选择哪些站点会参与发送和打开窗口。</p>
             <ul id="sw-site-list" class="controller-site-list"></ul>

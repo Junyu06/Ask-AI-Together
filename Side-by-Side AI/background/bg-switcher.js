@@ -48,7 +48,8 @@ async function loadOrderedSelectedSitesFromStorage() {
     { id: "yuanbao", url: BUILTIN_SITE_URLS.yuanbao },
     { id: "grok", url: BUILTIN_SITE_URLS.grok },
     { id: "claude", url: BUILTIN_SITE_URLS.claude },
-    { id: "gemini", url: BUILTIN_SITE_URLS.gemini }
+    { id: "gemini", url: BUILTIN_SITE_URLS.gemini },
+    { id: "perplexity", url: BUILTIN_SITE_URLS.perplexity }
   ];
   const customSites = Array.isArray(data.oa_custom_sites) ? data.oa_custom_sites : [];
   const siteOrder = Array.isArray(data.oa_site_order) ? data.oa_site_order : [];
@@ -101,9 +102,31 @@ async function openSelectedAisTiled() {
 }
 
 /**
- * 工具栏图标：先修正旧版无效扩展页 URL；在支持的 AI 页上尝试打开页内嵌侧栏；否则按勾选平铺。
+ * 工具栏图标：
+ * - legacy 模式（默认）：打开 legacy/index.html 分屏页（已有则聚焦）。
+ * - windows 模式：尝试页内嵌侧栏，否则按勾选平铺多窗口。
  */
 async function openSwitcherFromToolbarAction(tab) {
+  const data = await chrome.storage.local.get(["oa_mode"]);
+  const mode = data.oa_mode === "windows" ? "windows" : "legacy";
+
+  if (mode === "legacy") {
+    const legacyUrl = chrome.runtime.getURL("legacy/index.html");
+    const existing = await chrome.tabs.query({ url: legacyUrl });
+    if (existing.length) {
+      const t = existing[0];
+      try {
+        if (t.windowId != null) await chrome.windows.update(t.windowId, { focused: true });
+        await chrome.tabs.update(t.id, { active: true });
+      } catch (_e) {
+        chrome.tabs.create({ url: legacyUrl });
+      }
+    } else {
+      chrome.tabs.create({ url: legacyUrl });
+    }
+    return;
+  }
+
   if (tab?.id != null && isStaleExtensionUiUrl(tab.url || "")) {
     try {
       await chrome.tabs.update(tab.id, { url: chrome.runtime.getURL(OPTIONS_PAGE) });

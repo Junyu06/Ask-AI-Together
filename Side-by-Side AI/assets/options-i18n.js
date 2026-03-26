@@ -109,7 +109,12 @@
       settings_state_open: "{name}：窗口 #{windowId}",
       settings_state_closed: "{name}：未打开或已关闭",
       combine_unavailable: "[未获取到回复]",
-      combine_footer: "请在这里写你的要求"
+      combine_footer: "请在这里写你的要求",
+      mode_tab: "模式",
+      mode_subtitle: "选择点击扩展图标时的启动模式。",
+      mode_legacy: "分屏页（Legacy，默认）",
+      mode_windows: "多窗口平铺（Windows）",
+      mode_hint: "分屏页在同一标签页内以 iframe 并排展示各 AI；多窗口平铺会为每个 AI 打开独立浏览器窗口。"
     },
     en: {
       options_page_title: "Side-by-Side AI - Options",
@@ -216,7 +221,12 @@
       settings_state_open: "{name}: window #{windowId}",
       settings_state_closed: "{name}: not open or already closed",
       combine_unavailable: "[Unavailable]",
-      combine_footer: "Write your request here"
+      combine_footer: "Write your request here",
+      mode_tab: "Mode",
+      mode_subtitle: "Choose what happens when you click the extension icon.",
+      mode_legacy: "Split page (Legacy, default)",
+      mode_windows: "Multi-window tiling (Windows)",
+      mode_hint: "Split page shows all AIs side by side in iframes on one tab. Multi-window tiling opens a separate browser window for each AI."
     }
   };
 

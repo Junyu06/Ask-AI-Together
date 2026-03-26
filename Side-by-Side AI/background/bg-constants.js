@@ -26,7 +26,8 @@ const BUILTIN_SITE_URLS = {
   yuanbao: "https://yuanbao.tencent.com/",
   grok: "https://grok.com/",
   claude: "https://claude.ai/",
-  gemini: "https://gemini.google.com/"
+  gemini: "https://gemini.google.com/",
+  perplexity: "https://www.perplexity.ai/"
 };
 
 const SITE_DISPLAY_NAMES = {
@@ -38,7 +39,8 @@ const SITE_DISPLAY_NAMES = {
   yuanbao: "Yuanbao",
   grok: "Grok",
   claude: "Claude",
-  gemini: "Gemini"
+  gemini: "Gemini",
+  perplexity: "Perplexity"
 };
 
 /** Hostnames for matching tabs (aligned with content/content-sites.js SITES) */
@@ -51,5 +53,6 @@ const SITE_HOSTS = {
   yuanbao: ["yuanbao.tencent.com"],
   grok: ["grok.com"],
   claude: ["claude.ai"],
-  gemini: ["gemini.google.com"]
+  gemini: ["gemini.google.com"],
+  perplexity: ["www.perplexity.ai", "perplexity.ai"]
 };
