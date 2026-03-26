@@ -89,13 +89,13 @@ async function getTileLayoutPresetFromStorage() {
 }
 
 /** 按勾选站点打开/复用各 AI 窗口并平铺（不再打开独立常驻输入条小窗）。 */
-async function openSelectedAisTiled() {
+async function openSelectedAisTiled(workArea) {
   const sites = await loadOrderedSelectedSitesFromStorage();
   if (!sites.length) return;
   try {
     const layoutPreset = await getTileLayoutPresetFromStorage();
     await openOrReuseWindows(sites, { skipFocusChain: true });
-    await applyTile(sites, undefined, layoutPreset);
+    await applyTile(sites, workArea || undefined, layoutPreset);
   } catch (_e) {
     /* ignore */
   }
@@ -142,5 +142,21 @@ async function openSwitcherFromToolbarAction(tab) {
       /* 非 AI 页或未注入 embed 脚本 */
     }
   }
-  await openSelectedAisTiled();
+
+  let workArea = null;
+  try {
+    const displays = await chrome.system.display.getInfo();
+    const primary = displays.find((d) => d.isPrimary) || displays[0];
+    if (primary?.workArea?.width > 0) {
+      workArea = {
+        left: primary.workArea.left,
+        top: primary.workArea.top,
+        width: primary.workArea.width,
+        height: primary.workArea.height
+      };
+    }
+  } catch (_e) {
+    /* 无法获取显示器信息，applyTile 将使用默认值 */
+  }
+  await openSelectedAisTiled(workArea);
 }
