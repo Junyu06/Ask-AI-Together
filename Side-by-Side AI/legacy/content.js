@@ -322,30 +322,6 @@ function replaceEditableContents(el, text) {
   placeCaretAtEnd(el);
 }
 
-function replaceChatGptContents(el, text) {
-  const lines = normalizeEditableText(text).split("\n");
-  const fragment = document.createDocumentFragment();
-
-  lines.forEach((line) => {
-    const p = document.createElement("p");
-    if (line) {
-      p.textContent = line;
-    } else {
-      p.appendChild(document.createElement("br"));
-    }
-    fragment.appendChild(p);
-  });
-
-  if (!lines.length) {
-    const p = document.createElement("p");
-    p.appendChild(document.createElement("br"));
-    fragment.appendChild(p);
-  }
-
-  el.replaceChildren(fragment);
-  placeCaretAtEnd(el);
-}
-
 function setContentEditableValue(el, text, siteId = "") {
   el.focus();
   const selection = window.getSelection?.();
@@ -357,22 +333,6 @@ function setContentEditableValue(el, text, siteId = "") {
   }
 
   try {
-    if (siteId === "chatgpt") {
-      const html = normalizeEditableText(text)
-        .split("\n")
-        .map((line) => `<p>${line ? line.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : "<br>"}</p>`)
-        .join("");
-      if (html && document.execCommand("insertHTML", false, html)) {
-        const actual = readEditableText(el).trimEnd();
-        const expected = normalizeEditableText(text).trimEnd();
-        if (actual === expected) {
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        }
-      }
-    }
-
     if (document.execCommand("insertText", false, text)) {
       const actual = readEditableText(el).trimEnd();
       const expected = normalizeEditableText(text).trimEnd();
@@ -386,11 +346,7 @@ function setContentEditableValue(el, text, siteId = "") {
     // Fall through to DOM-based insertion for editors that ignore execCommand.
   }
 
-  if (siteId === "chatgpt") {
-    replaceChatGptContents(el, text);
-  } else {
-    replaceEditableContents(el, text);
-  }
+  replaceEditableContents(el, text);
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
   return true;

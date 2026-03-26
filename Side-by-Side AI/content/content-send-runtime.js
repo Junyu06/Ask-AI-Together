@@ -83,8 +83,7 @@ function waitForSendAcknowledgement(site, inputEl, message, baseline, timeoutMs 
 
 async function sendPrompt(packet) {
   const site = currentSite() || GENERIC_SITE;
-  const raw = typeof packet === "string" ? packet : String(packet?.message || "");
-  const message = stripLeadingNewlinesForPrompt(raw);
+  const message = typeof packet === "string" ? packet : String(packet?.message || "");
   const files = Array.isArray(packet?.files) ? packet.files : Array.isArray(packet?.images) ? packet.images : [];
   const requestId = String(packet?.requestId || "");
 

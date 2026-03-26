@@ -1,19 +1,7 @@
 "use strict";
 
-/**
- * ChatGPT 等对前导换行极敏感：textarea / ProseMirror 会显示成「先空一行再正文」。
- * 只剥掉头部的换行类字符与 BOM / 零宽字符，不剥普通行首空格。
- */
-function stripLeadingNewlinesForPrompt(text) {
-  return String(text || "")
-    .replace(/^[\r\n\u2028\u2029\uFEFF]+/g, "")
-    .replace(/^[\u200B-\u200D\uFEFF]+/g, "");
-}
-
 function setInputValue(el, text, siteId = "") {
   if (!el) return false;
-
-  const payload = siteId === "chatgpt" ? stripLeadingNewlinesForPrompt(text) : text;
 
   const tag = el.tagName;
   if (tag === "TEXTAREA" || tag === "INPUT") {
@@ -21,9 +9,9 @@ function setInputValue(el, text, siteId = "") {
     const proto = tag === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
     const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
     if (nativeSetter) {
-      nativeSetter.call(el, payload);
+      nativeSetter.call(el, text);
     } else {
-      el.value = payload;
+      el.value = text;
     }
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -31,7 +19,7 @@ function setInputValue(el, text, siteId = "") {
   }
 
   if (el.isContentEditable) {
-    return setContentEditableValue(el, payload, siteId);
+    return setContentEditableValue(el, text, siteId);
   }
 
   return false;
@@ -87,57 +75,7 @@ function replaceEditableContents(el, text) {
   placeCaretAtEnd(el);
 }
 
-function replaceChatGptContents(el, text) {
-  let lines = normalizeEditableText(stripLeadingNewlinesForPrompt(text)).split("\n");
-  while (lines.length && lines[0] === "") {
-    lines.shift();
-  }
-
-  const fragment = document.createDocumentFragment();
-
-  lines.forEach((line) => {
-    const p = document.createElement("p");
-    if (line) {
-      p.textContent = line;
-    } else {
-      p.appendChild(document.createElement("br"));
-    }
-    fragment.appendChild(p);
-  });
-
-  if (!lines.length) {
-    const p = document.createElement("p");
-    p.appendChild(document.createElement("br"));
-    fragment.appendChild(p);
-  }
-
-  el.replaceChildren(fragment);
-  placeCaretAtEnd(el);
-}
-
-function trimLeadingEmptyBlocks(el) {
-  if (!el?.childNodes?.length) return;
-  while (el.firstChild) {
-    const node = el.firstChild;
-    if (node.nodeType === Node.TEXT_NODE) {
-      if (String(node.textContent || "").trim()) break;
-      node.remove();
-      continue;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) break;
-    const text = normalizeEditableText(node.textContent || "").trim();
-    const onlyBreaks = node.childNodes.length > 0 && Array.from(node.childNodes).every((child) => {
-      if (child.nodeType === Node.TEXT_NODE) return !String(child.textContent || "").trim();
-      return child.nodeType === Node.ELEMENT_NODE && String(child.nodeName || "").toUpperCase() === "BR";
-    });
-    if (text || !onlyBreaks) break;
-    node.remove();
-  }
-}
-
 function setContentEditableValue(el, text, siteId = "") {
-  const t = siteId === "chatgpt" ? stripLeadingNewlinesForPrompt(text) : text;
-
   el.focus();
   const selection = window.getSelection?.();
   if (selection) {
@@ -148,28 +86,9 @@ function setContentEditableValue(el, text, siteId = "") {
   }
 
   try {
-    if (siteId === "chatgpt") {
-      let lines = normalizeEditableText(t).split("\n");
-      while (lines.length && lines[0] === "") {
-        lines.shift();
-      }
-      const html = lines
-        .map((line) => `<p>${line ? line.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : "<br>"}</p>`)
-        .join("");
-      if (html && document.execCommand("insertHTML", false, html)) {
-        const actual = readEditableText(el).trimEnd();
-        const expected = normalizeEditableText(t).trimEnd();
-        if (actual === expected) {
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        }
-      }
-    }
-
-    if (document.execCommand("insertText", false, t)) {
+    if (document.execCommand("insertText", false, text)) {
       const actual = readEditableText(el).trimEnd();
-      const expected = normalizeEditableText(t).trimEnd();
+      const expected = normalizeEditableText(text).trimEnd();
       if (actual === expected) {
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -180,14 +99,7 @@ function setContentEditableValue(el, text, siteId = "") {
     // Fall through to DOM-based insertion for editors that ignore execCommand.
   }
 
-  if (siteId === "chatgpt") {
-    replaceChatGptContents(el, t);
-  } else {
-    replaceEditableContents(el, t);
-  }
-  if (siteId === "chatgpt") {
-    trimLeadingEmptyBlocks(el);
-  }
+  replaceEditableContents(el, text);
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
