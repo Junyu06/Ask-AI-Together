@@ -114,8 +114,8 @@
       combine_footer: "请在这里写你的要求",
       mode_tab: "模式",
       mode_subtitle: "选择点击扩展图标时的启动模式。",
-      mode_legacy: "分屏页（默认）",
-      mode_windows: "多窗口平铺（兼容模式）",
+      mode_legacy: "默认模式（分屏页）",
+      mode_windows: "兼容模式（多窗口平铺）",
       mode_hint: "先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。",
       mode_saved: "已保存。下次点击工具栏图标时生效。"
     },
@@ -229,9 +229,9 @@
       combine_footer: "Write your request here",
       mode_tab: "Mode",
       mode_subtitle: "Choose what happens when you click the extension icon.",
-      mode_legacy: "Split page (default)",
-      mode_windows: "Multi-window tiling (Compatible Mode)",
-      mode_hint: "Use Default mode first. Switch to Compatible Mode if an AI site does not open, stays blank, or does not work correctly.",
+      mode_legacy: "Default mode (split page)",
+      mode_windows: "Compatibility mode (multi-window)",
+      mode_hint: "Use Default mode first. Switch to Compatibility mode if an AI site does not open, stays blank, or does not work correctly.",
       mode_saved: "Saved. Takes effect next time you click the toolbar icon."
     }
   };

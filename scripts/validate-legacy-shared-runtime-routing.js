@@ -232,6 +232,29 @@ function setPage(document) {
   document.appendChild(el(document, "main", {}, "", {}, [article, input, sendButton]));
 }
 
+function setClaudePage(document) {
+  document.children = [];
+  const userHeading = el(document, "h2", {}, "You said: old user prompt", { top: 10, bottom: 25 });
+  const userText = el(document, "div", {}, "old user prompt", { top: 30, bottom: 45 });
+  const responseHeading = el(
+    document,
+    "h2",
+    {},
+    "Claude responded: accessible heading summary",
+    { top: 50, bottom: 65 }
+  );
+  const response = el(document, "div", {}, "Claude latest visible reply", { top: 70, bottom: 90 });
+  const actions = el(document, "div", {}, "Message actions\nCopy\nRetry", { top: 95, bottom: 110 });
+  const input = el(document, "div", { contenteditable: "true" }, "", { top: 130, bottom: 150 });
+  document.appendChild(el(document, "main", {}, "", {}, [userHeading, userText, responseHeading, response, actions, input]));
+}
+
+function setHost(context, hostname) {
+  context.location.hostname = hostname;
+  context.location.href = `https://${hostname}/`;
+  context.location.origin = `https://${hostname}`;
+}
+
 function matchesSelectorList(node, selector) {
   return String(selector || "")
     .split(",")
@@ -487,6 +510,28 @@ async function flushPromises() {
   assert.equal(sharedCalls.at(-1)?.method, "collectLatest");
   assert.equal(parentWindow.calls.at(-1)?.message?.type, "LAST_RESPONSE");
   assert.equal(parentWindow.calls.at(-1)?.message?.payload?.text, "shared latest");
+
+  setHost(context, "claude.ai");
+  setClaudePage(context.document);
+  const rawClaudeOutcome = await sharedTransport.collectLatest(["claude"], { requestId: "raw-claude" });
+  assert.equal(rawClaudeOutcome.status, "response-found");
+  assert.equal(rawClaudeOutcome.text, "Claude latest visible reply");
+
+  dispatchMessage(messageListeners, {
+    type: "COLLECT_LAST_RESPONSE",
+    payload: { requestId: "collect-claude" },
+    config: { siteId: "claude" }
+  });
+  await flushPromises();
+  const claudeResponse = parentWindow.calls.at(-1)?.message;
+  assert.equal(sharedCalls.at(-1)?.method, "collectLatest");
+  assert.equal(claudeResponse?.type, "LAST_RESPONSE");
+  assert.equal(claudeResponse?.payload?.siteId, "claude");
+  assert.equal(claudeResponse?.payload?.text, "Claude latest visible reply");
+  assert.equal(claudeResponse?.payload?.status, "response-found");
+
+  setHost(context, "chatgpt.com");
+  setPage(context.document);
 
   dispatchMessage(messageListeners, {
     type: "NEW_CHAT",

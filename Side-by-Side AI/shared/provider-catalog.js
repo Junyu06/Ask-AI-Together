@@ -100,7 +100,13 @@
       inputSelectors: ['div[contenteditable="true"]', "textarea"],
       sendSelectors: ['button[aria-label*="Send" i]', 'button[type="submit"]'],
       newChatSelectors: ['a[href="/new"]', 'button[aria-label*="New chat" i]', 'a[href="/"]'],
-      responseSelectors: ['[data-is-streaming="false"] .font-claude-message', '[data-testid*="assistant"]', ".prose"]
+      responseSelectors: [
+        '.font-claude-message[data-is-streaming="false"]',
+        '[data-is-streaming="false"] .font-claude-message',
+        ".font-claude-message",
+        '[data-testid*="assistant"]',
+        ".prose"
+      ]
     },
     {
       id: "gemini",

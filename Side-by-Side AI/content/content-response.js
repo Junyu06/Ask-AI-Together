@@ -12,6 +12,17 @@ let lastSubmittedPromptText = "";
 
 const ASSISTANT_MESSAGE_SELECTOR = '[data-message-author-role="assistant"], [data-role="assistant"], [data-testid*="assistant"]';
 const USER_MESSAGE_SELECTOR = '[data-message-author-role="user"], [data-role="user"], [data-testid*="user"]';
+const CLAUDE_RESPONSE_HEADING_SELECTOR = [
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  '[role="heading"]',
+  "[aria-level]"
+];
+const CLAUDE_RESPONSE_HEADING_RE = /^Claude responded\b\s*:?\s*/i;
 
 function rememberSubmittedPromptText(text) {
   lastSubmittedPromptText = String(text || "");
@@ -37,8 +48,23 @@ function hasDescendantMatching(node, selector) {
   return Boolean(node?.querySelectorAll?.(selector)?.length);
 }
 
+function nodeHasClass(node, className) {
+  const list = node?.classList;
+  return Boolean(list && (typeof list.contains === "function" ? list.contains(className) : list.has?.(className)));
+}
+
+function hasClaudeFontMessageSignal(node) {
+  return nodeHasClass(node, "font-claude-message")
+    || Boolean(node?.closest?.(".font-claude-message"))
+    || hasDescendantMatching(node, ".font-claude-message");
+}
+
 function hasAssistantMessageSignal(node) {
   return Boolean(assistantRootForNode(node) || hasDescendantMatching(node, ASSISTANT_MESSAGE_SELECTOR));
+}
+
+function isClaudeAssistantMessageNode(node) {
+  return hasClaudeFontMessageSignal(node) || hasAssistantMessageSignal(node) || hasClaudeResponseHeadingSignal(node);
 }
 
 function hasUserMessageSignal(node) {
@@ -49,6 +75,10 @@ function isGrokStatusLine(line) {
   const normalized = String(line || "").trim().replaceAll(/\s+/g, " ");
   if (!normalized || normalized.length > 48) return false;
   return /^(Thought|Thinking|Reasoning|Reasoned)(?:\s+(?:for|about)\s+(?:(?:a|an)\s+)?(?:\d+(?:\.\d+)?\s*)?(?:s|sec|secs|second|seconds|min|mins|minute|minutes))?\.?$/i.test(normalized);
+}
+
+function isClaudeResponseHeadingLine(line) {
+  return CLAUDE_RESPONSE_HEADING_RE.test(String(line || "").trim());
 }
 
 function escapeRegExp(text) {
@@ -91,6 +121,15 @@ function grokCandidateHasTextBeyondPromptUi(text, prompt) {
 
 function cleanResponseTextForSite(text, siteId = "") {
   const normalized = normalizeResponseCandidateText(text);
+  if (siteId === "claude") {
+    return normalized
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => !isClaudeResponseHeadingLine(line))
+      .join("\n")
+      .replaceAll(/\n{3,}/g, "\n\n")
+      .trim();
+  }
   if (siteId === "grok") {
     return normalized
       .split("\n")
@@ -118,10 +157,78 @@ function candidateTextForNode(node, siteId = "") {
   return cleanResponseTextForSite(collectTextFromNode(node), siteId);
 }
 
+function isBlockedClaudeResponseContainer(node, inputEl) {
+  if (!node || !isVisible(node)) return true;
+  if (inputEl && (node === inputEl || node.contains(inputEl) || inputEl.contains(node))) return true;
+  if (node.closest?.("textarea, input, button, nav, header, footer, aside, form, [contenteditable=\"true\"]")) return true;
+  if (isLikelyUserNode(node) || hasUserMessageSignal(node)) return true;
+  return false;
+}
+
+function hasClaudeResponseHeadingSignal(node) {
+  if (!node?.querySelectorAll) return false;
+  return Array.from(node.querySelectorAll(CLAUDE_RESPONSE_HEADING_SELECTOR.join(","))).some((heading) => {
+    return isClaudeResponseHeadingNode(heading, null);
+  });
+}
+
+function isClaudeResponseHeadingNode(node, inputEl) {
+  if (!node || !isVisible(node)) return false;
+  if (isBlockedClaudeResponseContainer(node, inputEl)) return false;
+  const text = normalizeResponseCandidateText(node.getAttribute?.("aria-label") || collectTextFromNode(node));
+  return isClaudeResponseHeadingLine(text);
+}
+
+function childElements(node) {
+  return Array.from(node?.children || []);
+}
+
+function followingElementSiblings(node) {
+  const parent = node?.parentElement;
+  if (!parent) return [];
+  const children = childElements(parent);
+  const index = children.indexOf(node);
+  return index >= 0 ? children.slice(index + 1) : [];
+}
+
+function cleanClaudeResponseCandidateNode(node, inputEl) {
+  if (isBlockedClaudeResponseContainer(node, inputEl)) return "";
+  const text = candidateTextForNode(node, "claude");
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const uiOnlyLines = new Set(["message actions", "copy", "retry", "edit", "share"]);
+  if (lines.length && lines.every((line) => uiOnlyLines.has(line.toLowerCase()))) return "";
+  return isClaudeResponseHeadingLine(text) ? "" : text;
+}
+
+function textFromClaudeHeadingScope(heading, inputEl) {
+  let scope = heading;
+  for (let depth = 0; scope && depth < 4; depth += 1, scope = scope.parentElement) {
+    const siblingTexts = followingElementSiblings(scope)
+      .map((node) => cleanClaudeResponseCandidateNode(node, inputEl))
+      .filter(Boolean);
+    if (siblingTexts.length) return siblingTexts[0];
+  }
+
+  const parentText = cleanClaudeResponseCandidateNode(heading.parentElement, inputEl);
+  return parentText;
+}
+
+function extractClaudeLatestResponseText(inputEl) {
+  const headings = queryDeepAll(CLAUDE_RESPONSE_HEADING_SELECTOR)
+    .filter((node) => isClaudeResponseHeadingNode(node, inputEl));
+  if (!headings.length) return "";
+  sortNodesByScreenPosition(headings);
+  for (let index = headings.length - 1; index >= 0; index -= 1) {
+    const text = textFromClaudeHeadingScope(headings[index], inputEl);
+    if (text) return text;
+  }
+  return "";
+}
+
 function isLikelyReplyNode(node, inputEl, siteId = "") {
   if (!node || node === inputEl || !isVisible(node)) return false;
   if (inputEl && (node === inputEl || node.contains(inputEl) || inputEl.contains(node))) return false;
-  if (node.closest?.("textarea, input, nav, header, footer, aside")) return false;
+  if (node.closest?.("textarea, input, button, nav, header, footer, aside")) return false;
 
   const assistantRoot = assistantRootForNode(node);
   if (assistantRoot) {
@@ -141,6 +248,7 @@ function isLikelyReplyNode(node, inputEl, siteId = "") {
       return false;
     }
   }
+  if (siteId === "claude" && isClaudeAssistantMessageNode(node) && text.length >= 1) return true;
   if ((siteId === "gemini" || siteId === "grok") && text.length >= 1) return true;
   if (text.length < 12) return false;
   return true;
@@ -157,8 +265,16 @@ function sortNodesByScreenPosition(nodes) {
 }
 
 function preferAssistantMarkedMatches(matches, siteId = "") {
-  if (siteId !== "grok") return matches;
-  const assistantMatches = matches.filter((node) => Boolean(assistantRootForNode(node)));
+  if (siteId !== "grok" && siteId !== "claude") return matches;
+  if (siteId === "claude") {
+    const fontMessageMatches = matches.filter((node) => hasClaudeFontMessageSignal(node));
+    if (fontMessageMatches.length) return fontMessageMatches;
+    const assistantSignalMatches = matches.filter((node) => hasAssistantMessageSignal(node));
+    return assistantSignalMatches.length ? assistantSignalMatches : matches;
+  }
+  const assistantMatches = matches.filter((node) => {
+    return Boolean(assistantRootForNode(node));
+  });
   return assistantMatches.length ? assistantMatches : matches;
 }
 
@@ -180,6 +296,10 @@ function latestReplyTextFromMatches(matches, siteId = "") {
 function extractLatestResponseText() {
   const site = currentSite() || GENERIC_SITE;
   const inputEl = findFirst(site.inputSelectors);
+  if (site.id === "claude") {
+    const claudeText = extractClaudeLatestResponseText(inputEl);
+    if (claudeText) return claudeText;
+  }
   const selectors = RESPONSE_SELECTORS[site.id] || [];
   const explicitMatches = queryDeepAll(selectors).filter((node) => isLikelyReplyNode(node, inputEl, site.id));
   if (explicitMatches.length) {
@@ -203,6 +323,21 @@ function extractLatestResponseText() {
 }
 
 function collectReplyNodes(site, inputEl) {
+  if (site.id === "claude") {
+    const claudeHeadingMatches = queryDeepAll(CLAUDE_RESPONSE_HEADING_SELECTOR)
+      .filter((node) => isClaudeResponseHeadingNode(node, inputEl))
+      .map((heading) => {
+        let scope = heading;
+        for (let depth = 0; scope && depth < 4; depth += 1, scope = scope.parentElement) {
+          const match = followingElementSiblings(scope).find((node) => cleanClaudeResponseCandidateNode(node, inputEl));
+          if (match) return match;
+        }
+        return heading.parentElement;
+      })
+      .filter(Boolean);
+    if (claudeHeadingMatches.length) return claudeHeadingMatches;
+  }
+
   const selectors = RESPONSE_SELECTORS[site.id] || [];
   const explicitMatches = queryDeepAll(selectors).filter((node) => isLikelyReplyNode(node, inputEl, site.id));
   if (explicitMatches.length) return preferAssistantMarkedMatches(explicitMatches, site.id);

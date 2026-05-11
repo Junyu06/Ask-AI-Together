@@ -249,4 +249,80 @@ setPage(
 );
 assert.equal(api.extractLatestResponseText(), "OK SHARED");
 
+api.setLastSubmittedPromptText("");
+setPage(
+  context,
+  "claude.ai",
+  el("main", {}, "", {}, [
+    el("div", { contenteditable: "true", class: "prose" }, "", { top: 180, bottom: 200 }),
+    el("div", { "data-testid": "assistant-message" }, "OK CLAUDE ASSISTANT SIGNAL", {
+      top: 20,
+      bottom: 40
+    }),
+    el("div", { class: "prose" }, "Help menu text should not win", { top: 270, bottom: 290 })
+  ])
+);
+assert.equal(api.extractLatestResponseText(), "OK CLAUDE ASSISTANT SIGNAL");
+
+setPage(
+  context,
+  "claude.ai",
+  el("main", {}, "", {}, [
+    el("div", { contenteditable: "true" }, "", { top: 220, bottom: 240 }),
+    el("section", {}, "", { top: 20, bottom: 80 }, [
+      el("h2", {}, "Claude responded:", { top: 20, bottom: 30 }),
+      el("div", { class: "message-block" }, "OK CLAUDE HEADING RESPONSE", { top: 34, bottom: 70 })
+    ]),
+    el("div", { class: "prose" }, "Help menu text should not win", { top: 270, bottom: 290 })
+  ])
+);
+assert.equal(api.extractLatestResponseText(), "OK CLAUDE HEADING RESPONSE");
+
+api.setLastSubmittedPromptText("Claude user prompt should not win");
+setPage(
+  context,
+  "claude.ai",
+  el("main", {}, "", {}, [
+    el("div", { contenteditable: "true", class: "prose" }, "Claude input draft should not win", {
+      top: 180,
+      bottom: 200
+    }),
+    el("button", { class: "prose" }, "Retry should not win", { top: 210, bottom: 230 }),
+    el("div", { "data-testid": "user-message", class: "prose" }, "Claude user prompt should not win", {
+      top: 240,
+      bottom: 260
+    }),
+    el("div", { class: "prose" }, "Help menu text should not win", { top: 270, bottom: 290 }),
+    el("div", { "data-is-streaming": "false" }, "", { top: 20, bottom: 40 }, [
+      el("div", { class: "font-claude-message" }, "OK CLAUDE", { top: 20, bottom: 40 })
+    ])
+  ])
+);
+assert.equal(api.extractLatestResponseText(), "OK CLAUDE");
+
+api.setLastSubmittedPromptText("Claude user prompt should not win");
+setPage(
+  context,
+  "claude.ai",
+  el("main", {}, "", {}, [
+    el("div", { contenteditable: "true" }, "Claude input draft should not win", {
+      top: 220,
+      bottom: 240
+    }),
+    el("div", {}, "", { top: 10, bottom: 160 }, [
+      el("h2", {}, "You said: Claude user prompt should not win", { top: 10, bottom: 30 }),
+      el("div", {}, "Claude user prompt should not win", { top: 35, bottom: 55 }),
+      el(
+        "h2",
+        {},
+        "Claude responded: This heading is an accessible summary, not the full answer",
+        { top: 70, bottom: 90 }
+      ),
+      el("div", {}, "OK CLAUDE ACCESSIBLE HEADING\n\nSecond paragraph survives.", { top: 95, bottom: 140 }),
+      el("div", {}, "Message actions\nCopy\nRetry", { top: 145, bottom: 160 })
+    ])
+  ])
+);
+assert.equal(api.extractLatestResponseText(), "OK CLAUDE ACCESSIBLE HEADING\n\nSecond paragraph survives.");
+
 console.log("shared content response extraction validation passed");
