@@ -43,8 +43,9 @@
 - Grok
 - Claude
 - Gemini
+- Perplexity
 
-默认选中：`chatgpt`、`deepseek`、`kimi`。
+默认选中：`chatgpt`、`claude`、`gemini`。
 
 ## 4. 关键功能
 

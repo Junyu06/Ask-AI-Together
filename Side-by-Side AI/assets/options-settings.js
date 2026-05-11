@@ -100,7 +100,7 @@
     if (Array.isArray(rawSel) && rawSel.length) {
       selectedSiteIds = rawSel.filter((id) => getSiteById(id));
     } else {
-      selectedSiteIds = ["chatgpt", "deepseek", "kimi"];
+      selectedSiteIds = ["chatgpt", "claude", "gemini"];
     }
     windowChromeMode = data[STORAGE_KEYS.windowChromeMode] === "normal" ? "normal" : "minimal";
     siteOrder = normalizeSiteOrder(siteOrder);

@@ -59,7 +59,7 @@ async function loadOrderedSelectedSitesFromStorage() {
   let selectedSiteIds =
     Array.isArray(data.oa_selected_sites) && data.oa_selected_sites.length
       ? data.oa_selected_sites.filter((id) => map.has(id))
-      : ["chatgpt", "deepseek", "kimi"];
+      : ["chatgpt", "claude", "gemini"];
 
   const ordered = [];
   siteOrder.forEach((id) => {

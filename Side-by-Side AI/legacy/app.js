@@ -20,7 +20,7 @@ const textFormat = window.AskAiTogetherTextFormat;
 const historyService = window.AskAiTogetherHistoryService;
 const BUILTIN_SITES = providerCatalog?.getBuiltInSiteEntries?.() || [];
 const BUILTIN_SITE_HOSTS = providerCatalog?.getHostMap?.() || {};
-const defaultSiteIds = providerCatalog?.defaultBuiltInSiteIds || ["chatgpt", "deepseek", "kimi"];
+const defaultSiteIds = providerCatalog?.defaultBuiltInSiteIds || ["chatgpt", "claude", "gemini"];
 
 window.__ASK_AI_TOGETHER_RUNTIME__?.markBootstrapped?.({
   mode: "legacy",
@@ -198,7 +198,7 @@ const I18N = {
     mode_subtitle: "选择点击扩展图标时的启动模式。",
     mode_legacy: "默认模式（分屏页）",
     mode_windows: "兼容模式（多窗口平铺）",
-    mode_hint: "先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。",
+    mode_hint: "先使用默认模式。Perplexity 默认模式用不了，需要兼容模式。其他 AI 网站如果打不开、空白或不能正常使用，也切换到兼容模式。",
     combine_template_subtitle: "保存自定义 follow-up 模板；输入框为空时，Combine Latest 会自动追加它。",
     combine_template_enable: "输入框为空时使用默认 follow-up 模板",
     combine_template_label: "自定义 follow-up 模板",
@@ -309,7 +309,7 @@ const I18N = {
     mode_subtitle: "Choose the launch mode when clicking the extension icon.",
     mode_legacy: "Default mode (split page)",
     mode_windows: "Compatibility mode (multi-window)",
-    mode_hint: "Use Default mode first. Switch to Compatibility mode if an AI site does not open, stays blank, or does not work correctly.",
+    mode_hint: "Use Default mode first. Perplexity does not work in Default mode, so use Compatibility mode for it. If another AI site does not open, stays blank, or does not work correctly, switch to Compatibility mode too.",
     combine_template_subtitle: "Save a custom follow-up template; Combine Latest appends it when the prompt is empty.",
     combine_template_enable: "Use the default follow-up template when the prompt is empty",
     combine_template_label: "Custom follow-up template",

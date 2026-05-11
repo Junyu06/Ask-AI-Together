@@ -49,6 +49,11 @@ assert.ok(textFormat, "text formatter should load");
 
 const providers = catalog.getBuiltInProviders({ mode: "compatibility" });
 assert.deepEqual(
+  plain(catalog.defaultBuiltInSiteIds),
+  ["chatgpt", "claude", "gemini"],
+  "default selected built-in sites should be ChatGPT, Claude, Gemini"
+);
+assert.deepEqual(
   plain(providers.map((provider) => provider.id)),
   ["chatgpt", "deepseek", "kimi", "qwen", "doubao", "yuanbao", "grok", "claude", "gemini", "perplexity"]
 );

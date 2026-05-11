@@ -1,7 +1,7 @@
 (function initAskAiTogetherProviderCatalog(global) {
   "use strict";
 
-  var DEFAULT_BUILTIN_SITE_IDS = ["chatgpt", "deepseek", "kimi"];
+  var DEFAULT_BUILTIN_SITE_IDS = ["chatgpt", "claude", "gemini"];
   var GENERIC_SITE = {
     id: "generic",
     inputSelectors: ["textarea", 'div[contenteditable="true"]', "input[type='text']"],

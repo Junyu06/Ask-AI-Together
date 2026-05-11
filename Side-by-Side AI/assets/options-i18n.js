@@ -122,7 +122,7 @@
       mode_subtitle: "选择点击扩展图标时的启动模式。",
       mode_legacy: "默认模式（分屏页）",
       mode_windows: "兼容模式（多窗口平铺）",
-      mode_hint: "先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。",
+      mode_hint: "先使用默认模式。Perplexity 默认模式用不了，需要兼容模式。其他 AI 网站如果打不开、空白或不能正常使用，也切换到兼容模式。",
       mode_saved: "已保存。下次点击工具栏图标时生效。"
     },
     en: {
@@ -243,7 +243,7 @@
       mode_subtitle: "Choose what happens when you click the extension icon.",
       mode_legacy: "Default mode (split page)",
       mode_windows: "Compatibility mode (multi-window)",
-      mode_hint: "Use Default mode first. Switch to Compatibility mode if an AI site does not open, stays blank, or does not work correctly.",
+      mode_hint: "Use Default mode first. Perplexity does not work in Default mode, so use Compatibility mode for it. If another AI site does not open, stays blank, or does not work correctly, switch to Compatibility mode too.",
       mode_saved: "Saved. Takes effect next time you click the toolbar icon."
     }
   };
