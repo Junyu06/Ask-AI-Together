@@ -42,15 +42,10 @@ for (const source of [legacyHtmlSource, optionsHtmlSource]) {
 assert.ok(featureDocSource.includes("默认选中：`chatgpt`、`claude`、`gemini`。"));
 assert.ok(featureDocSource.includes("- Perplexity"));
 
-assert.match(embedSource, /#oa-embed-root\.oa-open\.oa-embed-root--history,\s*#oa-embed-root\.oa-open\.oa-embed-root--settings/);
-assert.match(embedSource, /right:\s*12px !important;/);
-assert.match(embedSource, /left:\s*auto !important;/);
-assert.match(embedSource, /bottom:\s*12px !important;/);
-assert.match(embedSource, /transform:\s*none !important;/);
-assert.match(embedSource, /width:\s*min\(720px, 50vw\) !important;/);
-assert.match(embedSource, /max-width:\s*calc\(100vw - 24px\) !important;/);
-assert.match(embedSource, /height:\s*calc\(100vh - 24px\) !important;/);
-assert.match(embedSource, /@media \(max-width:\s*900px\)/);
-assert.match(embedSource, /width:\s*auto !important;/);
+assert.match(embedSource, /#oa-embed-root\.oa-open\.oa-embed-root--history\s*\{\s*height:\s*min\(560px, 72vh\) !important;\s*min-height:\s*320px !important;\s*\}/);
+assert.match(embedSource, /#oa-embed-root\.oa-open\.oa-embed-root--settings\s*\{\s*width:\s*calc\(100vw - 8px\) !important;\s*max-width:\s*calc\(100vw - 8px\) !important;\s*height:\s*calc\(100vh - 8px\) !important;\s*min-height:\s*calc\(100vh - 8px\) !important;\s*bottom:\s*4px !important;\s*\}/);
+assert.doesNotMatch(embedSource, /#oa-embed-root\.oa-open\.oa-embed-root--history,\s*#oa-embed-root\.oa-open\.oa-embed-root--settings/);
+assert.doesNotMatch(embedSource, /width:\s*min\(720px, 50vw\) !important;/);
+assert.doesNotMatch(embedSource, /@media \(max-width:\s*900px\)\s*\{[\s\S]*#oa-embed-root\.oa-open\.oa-embed-root--history,[\s\S]*#oa-embed-root\.oa-open\.oa-embed-root--settings[\s\S]*width:\s*auto !important;[\s\S]*\}/);
 
 console.log("default sites, Perplexity copy, and embed panel validation passed");
