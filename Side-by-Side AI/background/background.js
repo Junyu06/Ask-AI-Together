@@ -1,6 +1,9 @@
 "use strict";
 
 importScripts(
+  "../shared/runtime-contract.js",
+  "../shared/provider-catalog.js",
+  "../shared/history-service.js",
   "bg-constants.js",
   "bg-session.js",
   "bg-tabs.js",
@@ -9,10 +12,47 @@ importScripts(
   "bg-actions.js"
 );
 
-function getMessageOrigin(sender) {
-  const windowId = Number.isInteger(sender?.tab?.windowId) ? sender.tab.windowId : null;
-  const tabId = Number.isInteger(sender?.tab?.id) ? sender.tab.id : null;
-  return { windowId, tabId };
+globalThis.__ASK_AI_TOGETHER_RUNTIME__?.markBootstrapped?.({
+  mode: "background",
+  frameRole: "background",
+  state: "background-runtime-ready"
+});
+
+function originInteger(value) {
+  return Number.isInteger(value) ? value : null;
+}
+
+function getMessageOrigin(sender, explicitOrigin) {
+  const fallback = explicitOrigin && typeof explicitOrigin === "object" ? explicitOrigin : {};
+  const windowId = originInteger(sender?.tab?.windowId) ?? originInteger(fallback.windowId);
+  const tabId = originInteger(sender?.tab?.id) ?? originInteger(fallback.tabId);
+  const groupId = originInteger(sender?.tab?.groupId) ?? originInteger(fallback.groupId);
+  const index = originInteger(sender?.tab?.index) ?? originInteger(fallback.index);
+  return { windowId, tabId, groupId, index };
+}
+
+async function siteIdForSenderTab(sender) {
+  const senderTabId = Number.isInteger(sender?.tab?.id) ? sender.tab.id : null;
+  if (senderTabId == null) return "";
+  const targets = await loadTargets();
+  for (const rec of Object.values(targets)) {
+    const siteId = String(rec?.siteId || "").trim();
+    if (rec?.tabId === senderTabId && siteId && siteId !== "generic") return siteId;
+  }
+  return "";
+}
+
+async function resolveUpdateHistorySiteId(msg, sender) {
+  const senderSiteId = await siteIdForSenderTab(sender);
+  const payloadSiteId = String(msg?.payload?.siteId || "").trim();
+  const explicitTargetSiteId = String(msg?.payload?.targetSiteId || msg?.siteId || msg?.targetSiteId || "").trim();
+  const requestedSiteId = payloadSiteId && payloadSiteId !== "generic"
+    ? payloadSiteId
+    : explicitTargetSiteId && explicitTargetSiteId !== "generic"
+      ? explicitTargetSiteId
+      : "";
+  if (senderSiteId) return senderSiteId;
+  return requestedSiteId;
 }
 
 function ensureToolbarClickRunsTilingOnly() {
@@ -110,24 +150,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "OA_UPDATE_HISTORY") {
-    const siteId = String(msg.payload?.siteId || "");
     const url = String(msg.payload?.url || "");
-    patchRecentHistoryUrl(siteId, url).catch(() => {});
-    if (sender.tab) {
-      broadcastToExtensionPages(msg);
-    }
+    resolveUpdateHistorySiteId(msg, sender)
+      .then((siteId) => {
+        if (!siteId || !url) return;
+        patchRecentHistoryUrl(siteId, url).catch(() => {});
+        if (sender.tab) {
+          broadcastToExtensionPages({
+            ...msg,
+            payload: {
+              ...(msg.payload || {}),
+              siteId
+            }
+          });
+        }
+      })
+      .catch(() => {});
     return false;
   }
 
+  if (msg.type === "OA_HISTORY_MUTATE") {
+    runHistoryMutation(msg.payload)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+
   if (msg.type === "OA_BG_OPEN_WINDOWS") {
-    openOrReuseWindows(msg.sites)
+    openOrReuseWindows(msg.sites, { origin: getMessageOrigin(sender, msg.origin), targetHints: msg.targetHints })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+
+  if (msg.type === "OA_BG_BIND_CURRENT_TARGET") {
+    bindTargetForSenderTab(msg.site, sender)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
   if (msg.type === "OA_BG_TILE" || msg.type === "OA_BG_RETILE") {
-    applyTile(siteEntriesFromMessage(msg), msg.workArea, msg.layoutPreset)
+    applyTile(siteEntriesFromMessage(msg), msg.workArea, msg.layoutPreset, getMessageOrigin(sender, msg.origin), msg.targetHints)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
@@ -155,35 +219,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "OA_BG_SEND_PROMPT") {
-    sendPromptToTargets(msg.siteIds, msg.message, msg.requestId, msg.sites, msg.files)
+    sendPromptToTargets(msg.siteIds, msg.message, msg.requestId, msg.sites, msg.files, getMessageOrigin(sender, msg.origin), msg.targetHints)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
   if (msg.type === "OA_BG_COLLECT_LAST") {
-    collectLastFromTargets(msg.siteIds, msg.sites)
+    collectLastFromTargets(msg.siteIds, msg.sites, getMessageOrigin(sender, msg.origin), msg.targetHints)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
+  if (msg.type === "OA_BG_GET_CAPABILITIES") {
+    getCapabilitiesForTargets(msg.siteIds, msg.sites)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, status: "transport-failed", error: String(e?.message || e) }));
+    return true;
+  }
+
   if (msg.type === "OA_BG_NEW_CHAT") {
-    newChatOnTargets(msg.siteIds, msg.sites, getMessageOrigin(sender))
+    newChatOnTargets(msg.siteIds, msg.sites, getMessageOrigin(sender, msg.origin), msg.targetHints)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
   if (msg.type === "OA_BG_GET_STATE") {
-    getState(msg.sites)
+    getState(msg.sites, getMessageOrigin(sender, msg.origin), msg.targetHints)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
   if (msg.type === "OA_BG_RESTORE_HISTORY_URLS") {
-    restoreHistoryUrlsToTargets(msg.urls, msg.sites, getMessageOrigin(sender))
+    restoreHistoryUrlsToTargets(msg.urls, msg.sites, getMessageOrigin(sender, msg.origin), msg.targetHints)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;

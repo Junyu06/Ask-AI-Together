@@ -23,9 +23,64 @@ const EMBED_MATCH_HOST_SUFFIXES = [
   "perplexity.ai"
 ];
 
+const EMBED_PROVIDER_FALLBACKS = [
+  { siteId: "chatgpt", url: "https://chatgpt.com/", hosts: ["chatgpt.com", "chat.openai.com"] },
+  { siteId: "deepseek", url: "https://chat.deepseek.com/", hosts: ["chat.deepseek.com"] },
+  { siteId: "kimi", url: "https://www.kimi.com/", hosts: ["www.kimi.com", "kimi.com"] },
+  { siteId: "qwen", url: "https://chat.qwen.ai/", hosts: ["chat.qwen.ai"] },
+  { siteId: "doubao", url: "https://www.doubao.com/", hosts: ["www.doubao.com", "doubao.com"] },
+  { siteId: "yuanbao", url: "https://yuanbao.tencent.com/", hosts: ["yuanbao.tencent.com"] },
+  { siteId: "grok", url: "https://grok.com/", hosts: ["grok.com"] },
+  { siteId: "claude", url: "https://claude.ai/", hosts: ["claude.ai"] },
+  { siteId: "gemini", url: "https://gemini.google.com/", hosts: ["gemini.google.com"] },
+  { siteId: "perplexity", url: "https://www.perplexity.ai/", hosts: ["www.perplexity.ai", "perplexity.ai"] }
+];
+
 function hostMatchesEmbed(h) {
   const host = String(h || "").toLowerCase();
   return EMBED_MATCH_HOST_SUFFIXES.some((s) => host === s || host.endsWith(`.${s}`) || host.includes(s));
+}
+
+function providerHostMatches(hostname, hosts) {
+  const host = String(hostname || "").toLowerCase().replace(/^www\./, "");
+  return hosts.some((value) => {
+    const needle = String(value || "").toLowerCase().replace(/^www\./, "");
+    return host === needle || host.endsWith(`.${needle}`);
+  });
+}
+
+function getCurrentEmbedSiteEntry() {
+  const catalog = window.AskAiTogetherProviderCatalog;
+  const providers = typeof catalog?.getBuiltInProviders === "function"
+    ? catalog.getBuiltInProviders({ mode: "compatibility" }).map((provider) => ({
+      siteId: provider.id,
+      url: provider.homeUrl || provider.url,
+      hosts: provider.matchHosts || []
+    }))
+    : EMBED_PROVIDER_FALLBACKS;
+  const provider = providers.find((item) => providerHostMatches(location.hostname, item.hosts));
+  if (!provider?.siteId) return null;
+  return {
+    siteId: provider.siteId,
+    url: location.href || provider.url
+  };
+}
+
+function embedContextPayload() {
+  const site = getCurrentEmbedSiteEntry();
+  return site ? { pageUrl: location.href, currentSite: site } : { pageUrl: location.href };
+}
+
+async function registerCurrentEmbedTarget() {
+  if (!embedContextValid) return { ok: false, reason: "context-invalidated" };
+  const site = getCurrentEmbedSiteEntry();
+  if (!site) return { ok: false, reason: "missing-current-site" };
+  try {
+    return await chrome.runtime.sendMessage({ type: "OA_BG_BIND_CURRENT_TARGET", site });
+  } catch (err) {
+    if (isExtensionContextInvalidError(err)) markEmbedContextInvalid();
+    return { ok: false, reason: String(err?.message || err) };
+  }
 }
 
 function injectEmbedStyles() {
@@ -229,7 +284,7 @@ function getOptionsEmbedUrl() {
 function postToEmbed(payload) {
   if (!embedContextValid) return;
   try {
-    embedIframe?.contentWindow?.postMessage({ ...payload, source: "oa-page-embed" }, "*");
+    embedIframe?.contentWindow?.postMessage({ ...payload, ...embedContextPayload(), source: "oa-page-embed" }, "*");
   } catch (err) {
     if (isExtensionContextInvalidError(err)) {
       markEmbedContextInvalid();
@@ -286,6 +341,7 @@ function getHostEmbedMode() {
 
 function openEmbedPanel() {
   if (!embedContextValid) return;
+  void registerCurrentEmbedTarget();
   injectEmbedStyles();
   if (rootEl && !rootEl.isConnected) {
     rootEl = null;
@@ -513,7 +569,17 @@ function installDockSelfHealing() {
 window.addEventListener("message", (ev) => {
   if (ev.source === embedIframe?.contentWindow && ev.data?.type === "OA_EMBED_READY" && ev.data?.source === "oa-options-embed") {
     embedIframeReady = true;
-    flushEmbedPendingBatch();
+    void registerCurrentEmbedTarget().finally(() => {
+      postToEmbed({ type: "OA_EMBED_CONTEXT" });
+      flushEmbedPendingBatch();
+    });
+    return;
+  }
+  if (ev.source === embedIframe?.contentWindow && ev.data?.type === "OA_EMBED_REQUEST_CONTEXT" && ev.data?.source === "oa-options-embed") {
+    const requestId = ev.data.requestId;
+    void registerCurrentEmbedTarget().finally(() => {
+      postToEmbed({ type: "OA_EMBED_CONTEXT", requestId });
+    });
     return;
   }
   if (ev.source === embedIframe?.contentWindow && ev.data?.type === "OA_EMBED_MODE" && ev.data?.source === "oa-options-embed") {

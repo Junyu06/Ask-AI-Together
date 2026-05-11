@@ -83,7 +83,9 @@
       status_new_chat_sent: "已请求各站点新对话。",
       status_sending: "正在发送…",
       status_sent: "已发送到各窗口。",
+      status_sent_partial: "已发送到 {count} 个窗口；部分目标失败：{reason}",
       status_attachments_ready: "已附加 {count} 张图片，会一起发送到所选站点。",
+      status_attachments_unsupported: "多窗口模式暂不支持图片附件；请改用文字发送。",
       status_attachments_failed: "读取剪贴板图片失败，请重试。",
       status_restore_running: "正在恢复各站点页面…",
       status_restore_failed: "恢复失败：{reason}",
@@ -112,9 +114,9 @@
       combine_footer: "请在这里写你的要求",
       mode_tab: "模式",
       mode_subtitle: "选择点击扩展图标时的启动模式。",
-      mode_legacy: "分屏页（Legacy，默认）",
-      mode_windows: "多窗口平铺（Windows）",
-      mode_hint: "分屏页在同一标签页内以 iframe 并排展示各 AI；多窗口平铺会为每个 AI 打开独立浏览器窗口。",
+      mode_legacy: "分屏页（默认）",
+      mode_windows: "多窗口平铺（兼容模式）",
+      mode_hint: "先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。",
       mode_saved: "已保存。下次点击工具栏图标时生效。"
     },
     en: {
@@ -196,7 +198,9 @@
       status_new_chat_sent: "Requested a new chat on each selected site.",
       status_sending: "Sending...",
       status_sent: "Sent to the selected windows.",
+      status_sent_partial: "Sent to {count} window(s); some targets failed: {reason}",
       status_attachments_ready: "Attached {count} image(s). They will be sent to every selected site.",
+      status_attachments_unsupported: "Compatibility mode does not support image attachments. Send text only.",
       status_attachments_failed: "Failed to read the pasted image. Please retry.",
       status_restore_running: "Restoring saved site URLs...",
       status_restore_failed: "Restore failed: {reason}",
@@ -225,9 +229,9 @@
       combine_footer: "Write your request here",
       mode_tab: "Mode",
       mode_subtitle: "Choose what happens when you click the extension icon.",
-      mode_legacy: "Split page (Legacy, default)",
-      mode_windows: "Multi-window tiling (Windows)",
-      mode_hint: "Split page shows all AIs side by side in iframes on one tab. Multi-window tiling opens a separate browser window for each AI.",
+      mode_legacy: "Split page (default)",
+      mode_windows: "Multi-window tiling (Compatible Mode)",
+      mode_hint: "Use Default mode first. Switch to Compatible Mode if an AI site does not open, stays blank, or does not work correctly.",
       mode_saved: "Saved. Takes effect next time you click the toolbar icon."
     }
   };

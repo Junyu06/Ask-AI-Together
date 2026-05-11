@@ -4,11 +4,22 @@ const STORAGE_HISTORY = "oa_history";
 const STORAGE_THEME_MODE = "oa_theme_mode";
 const STORAGE_LOCALE_MODE = "oa_locale_mode";
 const STORAGE_LAUNCH_MODE = "oa_mode";
+const OPTIONS_EMBED_MODE = new URLSearchParams(location.search).get("embed") === "1";
 
 /** @type {boolean} */
 let promptIsComposing = false;
 let pendingPanelCloseTimer = 0;
 let sendStatusTimer = 0;
+const textFormat = window.AskAiTogetherTextFormat;
+const historyService = window.AskAiTogetherHistoryService;
+let embeddedCurrentSite = null;
+const embeddedContextRequests = new Map();
+
+window.__ASK_AI_TOGETHER_RUNTIME__?.markBootstrapped?.({
+  mode: "compatibility",
+  frameRole: "extension-page",
+  state: "options-runtime-ready"
+});
 
 function notifyEmbedMode(mode) {
   if (!document.body.classList.contains("options-embed")) return;
@@ -171,6 +182,25 @@ function setSendStatus(text) {
   }
 }
 
+function formatRuntimeFailureReason(res, fallback = "unknown") {
+  if (!res || typeof res !== "object") return fallback;
+  if (Array.isArray(res.outcomes)) {
+    const failedOutcome = res.outcomes.find((outcome) => outcome && outcome.ok === false) || res.outcomes[0];
+    if (failedOutcome) {
+      return formatRuntimeFailureReason(failedOutcome, fallback);
+    }
+  }
+  const direct = res.error || res.reason || res.status;
+  if (direct) return String(direct);
+  if (Array.isArray(res.errors) && res.errors.length) return res.errors.map(String).join(",");
+  return fallback;
+}
+
+function successfulRuntimeOutcomeCount(res) {
+  if (!Array.isArray(res?.outcomes)) return Number(res?.sentCount || 0);
+  return res.outcomes.filter((outcome) => outcome?.ok !== false).length;
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -203,13 +233,19 @@ function autoResizePrompt() {
 }
 
 function normalizeCollectedResponseText(text) {
-  return String(text || "")
+  return textFormat?.normalizeCollectedResponseText?.(text) || String(text || "")
     .replaceAll(/\r\n?/g, "\n")
     .replaceAll(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function buildCombinedLatestPrompt(sections, existingPrompt = "") {
+  if (textFormat?.buildCombinedLatestPrompt) {
+    return textFormat.buildCombinedLatestPrompt(sections, existingPrompt, {
+      unavailableText: t("combine_unavailable"),
+      footerText: t("combine_footer")
+    });
+  }
   const body = sections
     .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || t("combine_unavailable")}`)
     .join("\n\n---------\n\n");
@@ -229,11 +265,147 @@ function buildSiteEntriesFromHistoryUrls(urls) {
   return entries;
 }
 
+function normalizeRuntimeSiteEntry(entry) {
+  const siteId = String(entry?.siteId || "").trim();
+  const url = String(entry?.url || "").trim();
+  if (!siteId || !/^https?:\/\//i.test(url)) return null;
+  return { siteId, url };
+}
+
+function rememberEmbeddedContext(data) {
+  if (!OPTIONS_EMBED_MODE) return;
+  const entry = normalizeRuntimeSiteEntry(data?.currentSite || data?.site);
+  if (entry) embeddedCurrentSite = entry;
+}
+
+function resolveEmbeddedContextRequest(data) {
+  const requestId = String(data?.requestId || "");
+  if (!requestId || !embeddedContextRequests.has(requestId)) return;
+  const pending = embeddedContextRequests.get(requestId);
+  embeddedContextRequests.delete(requestId);
+  window.clearTimeout(pending.timer);
+  pending.resolve(embeddedCurrentSite);
+}
+
+function requestEmbeddedContextRefresh() {
+  if (!OPTIONS_EMBED_MODE) return Promise.resolve(embeddedCurrentSite);
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      embeddedContextRequests.delete(requestId);
+      resolve(embeddedCurrentSite);
+    }, 800);
+    embeddedContextRequests.set(requestId, { resolve, timer });
+    try {
+      window.parent.postMessage({
+        type: "OA_EMBED_REQUEST_CONTEXT",
+        requestId,
+        source: "oa-options-embed"
+      }, "*");
+    } catch (_e) {
+      window.clearTimeout(timer);
+      embeddedContextRequests.delete(requestId);
+      resolve(embeddedCurrentSite);
+    }
+  });
+}
+
+function mergeEmbeddedCurrentSite(sites) {
+  const list = Array.isArray(sites) ? sites.slice() : [];
+  if (!OPTIONS_EMBED_MODE || !embeddedCurrentSite) return list;
+  const idx = list.findIndex((site) => site.siteId === embeddedCurrentSite.siteId);
+  if (idx >= 0) {
+    list[idx] = embeddedCurrentSite;
+    return list;
+  }
+  return [embeddedCurrentSite, ...list];
+}
+
+async function runtimeTargetSites(siteIds) {
+  await requestEmbeddedContextRefresh();
+  const sites = await loadOrderedSelectedSitesPayload();
+  const ids = Array.isArray(siteIds) ? siteIds.map((id) => String(id || "")).filter(Boolean) : [];
+  if (!ids.length) return mergeEmbeddedCurrentSite(sites);
+  const allowed = new Set(ids);
+  return mergeEmbeddedCurrentSite(sites.filter((site) => allowed.has(site.siteId)));
+}
+
+function createCompatibilityRuntimeTransport() {
+  return {
+    async sendPrompt(siteIds, message) {
+      const sites = await runtimeTargetSites(siteIds);
+      const ids = sites.map((site) => site.siteId);
+      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const [origin, targetHints] = await Promise.all([
+        window.getOptionsPageOriginPayload?.(),
+        window.getOptionsPageTargetHints?.(sites)
+      ]);
+      return chrome.runtime.sendMessage({
+        type: "OA_BG_SEND_PROMPT",
+        siteIds: ids,
+        sites,
+        message: String(message || ""),
+        requestId,
+        origin,
+        targetHints
+      });
+    },
+    async collectLatest(siteIds) {
+      const sites = await runtimeTargetSites(siteIds);
+      const ids = sites.map((site) => site.siteId);
+      const [origin, targetHints] = await Promise.all([
+        window.getOptionsPageOriginPayload?.(),
+        window.getOptionsPageTargetHints?.(sites)
+      ]);
+      return chrome.runtime.sendMessage({
+        type: "OA_BG_COLLECT_LAST",
+        siteIds: ids,
+        sites,
+        origin,
+        targetHints
+      });
+    },
+    async newChat(siteIds) {
+      const sites = await runtimeTargetSites(siteIds);
+      const ids = sites.map((site) => site.siteId);
+      const [origin, targetHints] = await Promise.all([
+        window.getOptionsPageOriginPayload?.(),
+        window.getOptionsPageTargetHints?.(sites)
+      ]);
+      return chrome.runtime.sendMessage({
+        type: "OA_BG_NEW_CHAT",
+        siteIds: ids,
+        sites,
+        origin,
+        targetHints
+      });
+    },
+    async getCapabilities(siteIds) {
+      const sites = await runtimeTargetSites(siteIds);
+      const ids = sites.map((site) => site.siteId);
+      return chrome.runtime.sendMessage({
+        type: "OA_BG_GET_CAPABILITIES",
+        siteIds: ids,
+        sites
+      });
+    }
+  };
+}
+
+const compatibilityRuntimeTransport = createCompatibilityRuntimeTransport();
+window.__ASK_AI_TOGETHER_RUNTIME__?.registerTransport?.("compatibility", compatibilityRuntimeTransport);
+
 async function attachFilesNow(files) {
   const sites = await loadOrderedSelectedSitesPayload();
   const siteIds = sites.map((s) => s.siteId);
   if (!siteIds.length) {
     setSendStatus(t("status_pick_sites"));
+    return;
+  }
+  const capabilities = await compatibilityRuntimeTransport.getCapabilities(siteIds);
+  const unsupported = !capabilities?.ok || (capabilities.capabilities || []).some((item) => item.supportsAttachments !== true);
+  if (unsupported) {
+    setSendStatus(t("status_attachments_unsupported"));
     return;
   }
   const res = await chrome.runtime.sendMessage({
@@ -254,6 +426,18 @@ async function attachFilesNow(files) {
 }
 
 async function handleIncomingFiles(fileList) {
+  const sites = await loadOrderedSelectedSitesPayload();
+  const siteIds = sites.map((s) => s.siteId);
+  if (!siteIds.length) {
+    setSendStatus(t("status_pick_sites"));
+    return;
+  }
+  const capabilities = await compatibilityRuntimeTransport.getCapabilities(siteIds);
+  const unsupported = !capabilities?.ok || (capabilities.capabilities || []).some((item) => item.supportsAttachments !== true);
+  if (unsupported) {
+    setSendStatus(t("status_attachments_unsupported"));
+    return;
+  }
   const files = await normalizeClipboardFiles(fileList);
   if (!files.length) return;
   await attachFilesNow(files);
@@ -261,7 +445,7 @@ async function handleIncomingFiles(fileList) {
 
 async function combineLatestIntoPrompt(promptEl, combineLatestBtnEl) {
   closePanels();
-  const sites = await loadOrderedSelectedSitesPayload();
+  const sites = await runtimeTargetSites();
   const siteIds = sites.map((s) => s.siteId);
   if (!siteIds.length) {
     setSendStatus(t("status_pick_sites"));
@@ -270,13 +454,9 @@ async function combineLatestIntoPrompt(promptEl, combineLatestBtnEl) {
   if (combineLatestBtnEl) combineLatestBtnEl.disabled = true;
   setSendStatus(t("status_combining"));
   try {
-    const res = await chrome.runtime.sendMessage({
-      type: "OA_BG_COLLECT_LAST",
-      siteIds,
-      sites
-    });
+    const res = await compatibilityRuntimeTransport.collectLatest(siteIds);
     if (!res?.ok || !Array.isArray(res.sections)) {
-      setSendStatus(`Collect failed: ${res?.error || "unknown"}`);
+      setSendStatus(`Collect failed: ${formatRuntimeFailureReason(res)}`);
       return;
     }
     if (promptEl) {
@@ -294,17 +474,13 @@ async function combineLatestIntoPrompt(promptEl, combineLatestBtnEl) {
 
 async function triggerNewChat() {
   closePanels();
-  const sites = await loadOrderedSelectedSitesPayload();
+  const sites = await runtimeTargetSites();
   const siteIds = sites.map((s) => s.siteId);
   if (!siteIds.length) {
     setSendStatus(t("status_pick_sites"));
     return;
   }
-  await chrome.runtime.sendMessage({
-    type: "OA_BG_NEW_CHAT",
-    siteIds,
-    sites
-  });
+  await compatibilityRuntimeTransport.newChat(siteIds);
   setSendStatus(t("status_new_chat_sent"));
 }
 
@@ -342,6 +518,9 @@ async function syncModeControls() {
 }
 
 async function loadHistoryRaw() {
+  if (historyService?.loadHistory) {
+    return historyService.loadHistory();
+  }
   const data = await chrome.storage.local.get([STORAGE_HISTORY]);
   return Array.isArray(data[STORAGE_HISTORY]) ? data[STORAGE_HISTORY] : [];
 }
@@ -349,10 +528,8 @@ async function loadHistoryRaw() {
 async function deleteHistoryEntry(entryId) {
   const id = String(entryId || "");
   if (!id) return;
-  const history = await loadHistoryRaw();
-  const next = history.filter((item) => String(item?.id || "") !== id);
-  if (next.length === history.length) return;
-  await chrome.storage.local.set({ [STORAGE_HISTORY]: next.slice(0, 200) });
+  const deleted = await historyService?.deleteEntryById?.(id);
+  if (!deleted) return;
   await renderHistoryPanel();
 }
 
@@ -408,10 +585,12 @@ async function renderHistoryPanel() {
         const res = await chrome.runtime.sendMessage({
           type: "OA_BG_RESTORE_HISTORY_URLS",
           urls,
-          sites
+          sites,
+          origin: await window.getOptionsPageOriginPayload?.(),
+          targetHints: await window.getOptionsPageTargetHints?.(sites)
         });
         if (!res?.ok) {
-          setSendStatus(t("status_restore_failed", { reason: res?.error || "unknown" }));
+          setSendStatus(t("status_restore_failed", { reason: formatRuntimeFailureReason(res) }));
           return;
         }
         const n = typeof res.navigated === "number" ? res.navigated : 0;
@@ -434,12 +613,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   await syncModeControls();
   await renderHistoryPanel();
 
-  const embedMode = new URLSearchParams(location.search).get("embed") === "1";
+  const embedMode = OPTIONS_EMBED_MODE;
   if (embedMode) {
     document.body.classList.add("options-embed");
     window.addEventListener("message", (ev) => {
       if (ev.source !== window.parent) return;
       if (ev.data?.source !== "oa-page-embed") return;
+      rememberEmbeddedContext(ev.data);
+      if (ev.data?.type === "OA_EMBED_CONTEXT") {
+        resolveEmbeddedContextRequest(ev.data);
+        return;
+      }
       if (ev.data?.type === "OA_EMBED_VIEW") {
         const view = ev.data.view === "history" ? "history" : "default";
         if (view === "history") openHistoryPanel();
@@ -487,7 +671,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("history-clear-all")?.addEventListener("click", async () => {
-    await chrome.storage.local.set({ [STORAGE_HISTORY]: [] });
+    await historyService?.saveHistory?.([]);
     await renderHistoryPanel();
   });
 
@@ -534,29 +718,30 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("new-chat")?.addEventListener("click", () => void triggerNewChat());
 
   document.getElementById("send")?.addEventListener("click", async () => {
-    const sites = await loadOrderedSelectedSitesPayload();
+    const sites = await runtimeTargetSites();
     const siteIds = sites.map((s) => s.siteId);
     if (!siteIds.length) {
       setSendStatus(t("status_pick_sites"));
       return;
     }
     const message = String(promptEl?.value || "");
-    const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     setSendStatus(t("status_sending"));
-    const res = await chrome.runtime.sendMessage({
-      type: "OA_BG_SEND_PROMPT",
-      siteIds,
-      sites,
-      message,
-      requestId
-    });
+    const res = await compatibilityRuntimeTransport.sendPrompt(siteIds, message);
     if (!res?.ok) {
-      setSendStatus(`Send failed: ${res?.error || "unknown"}`);
+      setSendStatus(`Send failed: ${formatRuntimeFailureReason(res)}`);
       return;
     }
     if (promptEl) {
       promptEl.value = "";
       autoResizePrompt();
+    }
+    if (res.partialSuccess || res.status === "partial-success") {
+      setSendStatus(t("status_sent_partial", {
+        count: res.sentCount || successfulRuntimeOutcomeCount(res),
+        reason: formatRuntimeFailureReason(res)
+      }));
+      void renderHistoryPanel();
+      return;
     }
     setSendStatus(t("status_sent"));
     void renderHistoryPanel();

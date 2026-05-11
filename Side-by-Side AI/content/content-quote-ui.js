@@ -1,144 +1,242 @@
 "use strict";
 
-function isSelectionInsideEditable(range) {
-  const node = range.commonAncestorContainer?.nodeType === Node.ELEMENT_NODE
-    ? range.commonAncestorContainer
-    : range.commonAncestorContainer?.parentElement;
-  if (!node) return false;
-  return Boolean(node.closest?.("textarea, input, [contenteditable='true']"));
+let compatibilityConfiguredSiteId = "";
+
+function rememberCompatibilityConfiguredSiteId(siteId) {
+  const cleanSiteId = String(siteId || "").trim();
+  if (cleanSiteId && cleanSiteId !== "generic") {
+    compatibilityConfiguredSiteId = cleanSiteId;
+    ensureTopLevelRuntimeEventsRegistered();
+  }
+  return compatibilityConfiguredSiteId;
 }
 
-function quoteBtnLabel() {
-  const lang = String(navigator.language || "").toLowerCase();
-  return lang.startsWith("zh") ? "引用" : "Quote";
+function effectiveCompatibilitySiteId(site, configuredSiteId = "") {
+  const detectedSiteId = String(site?.id || "").trim();
+  const cleanConfiguredSiteId = String(configuredSiteId || compatibilityConfiguredSiteId || "").trim();
+  if ((!detectedSiteId || detectedSiteId === "generic") && cleanConfiguredSiteId) return cleanConfiguredSiteId;
+  return detectedSiteId || cleanConfiguredSiteId || "generic";
+}
+
+const compatibilityQuoteController = globalThis.AskAiTogetherQuoteUi?.createController?.({
+  getPayload(text) {
+    return {
+      text,
+      siteId: effectiveCompatibilitySiteId(currentSite() || GENERIC_SITE),
+      url: location.href
+    };
+  },
+  onQuote(payload) {
+    notifyExtension({ type: "OA_QUOTE_TEXT", payload });
+  }
+});
+
+function showQuoteButton() {
+  compatibilityQuoteController?.show();
 }
 
 function removeQuoteButton() {
-  const old = document.querySelector(".oa-quote-float-btn");
-  if (old) old.remove();
+  compatibilityQuoteController?.remove();
 }
 
-function createQuoteButton(rect, text) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "oa-quote-float-btn";
-  button.textContent = quoteBtnLabel();
-  Object.assign(button.style, {
-    position: "absolute",
-    zIndex: "2147483646",
-    left: `${rect.left + window.scrollX}px`,
-    top: `${rect.bottom + window.scrollY + 8}px`,
-    padding: "4px 8px",
-    border: "1px solid rgba(255,255,255,0.2)",
-    borderRadius: "8px",
-    background: "rgba(20,20,20,0.9)",
-    color: "#fff",
-    fontSize: "12px",
-    lineHeight: "16px",
-    cursor: "pointer",
-    boxShadow: "0 8px 18px rgba(0,0,0,0.35)"
-  });
-
-  button.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const payload = {
-      text,
-      siteId: (currentSite() || GENERIC_SITE).id,
-      url: location.href
-    };
-    notifyExtension({ type: "OA_QUOTE_TEXT", payload });
-    removeQuoteButton();
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-  });
-
-  return button;
+function isTopLevelAiSurface() {
+  if (window.parent !== window) return false;
+  const siteId = String(currentSite()?.id || "").trim();
+  if (siteId && siteId !== "generic") return true;
+  return Boolean(String(compatibilityConfiguredSiteId || "").trim());
 }
 
-function debounce(fn, wait) {
-  let timer = null;
-  return (...args) => {
-    if (timer) window.clearTimeout(timer);
-    timer = window.setTimeout(() => fn(...args), wait);
+function getRuntimeTransport() {
+  return globalThis.__ASK_AI_TOGETHER_RUNTIME__?.getTransport?.("compatibility-content") || null;
+}
+
+function makeRuntimeEnvelope(msg, action, payload = {}) {
+  const site = currentSite() || GENERIC_SITE;
+  const configuredSiteId = rememberCompatibilityConfiguredSiteId(msg?.siteId || msg?.targetSiteId || msg?.providerId);
+  return {
+    requestId: String(msg?.requestId || ""),
+    sourceMode: "compatibility",
+    targetMode: "compatibility-content",
+    frameRole: "top",
+    providerId: effectiveCompatibilitySiteId(site, configuredSiteId),
+    origin: location.origin,
+    timeoutMs: Number(msg?.timeoutMs || 0),
+    payload: {
+      action,
+      ...payload
+    }
   };
 }
 
-const showQuoteButton = debounce(() => {
-  try {
-    removeQuoteButton();
-    const selection = window.getSelection();
-    const text = selection?.toString().trim();
-    if (!text || !selection?.rangeCount) return;
-    const range = selection.getRangeAt(0);
-    if (range.collapsed || isSelectionInsideEditable(range)) return;
-    const clipped = text.slice(0, 2500);
-    const rect = range.getBoundingClientRect();
-    if (!rect.width && !rect.height) return;
-    document.body.appendChild(createQuoteButton(rect, clipped));
-  } catch (_error) {
-    // Ignore UI-only errors.
-  }
-}, 160);
-
-function isTopLevelAiSurface() {
-  return window.parent === window && !!currentSite();
+function validateRuntimeEnvelope(envelope, options = {}) {
+  const runtime = globalThis.__ASK_AI_TOGETHER_RUNTIME__;
+  if (!runtime?.validateRuntimeMessageEnvelope) return { ok: true, envelope, errors: [] };
+  return runtime.validateRuntimeMessageEnvelope(envelope, options);
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || !msg.type) return false;
-  if (
-    msg.type === "OA_RUNTIME_CHAT" ||
-    msg.type === "OA_RUNTIME_ATTACH_FILES" ||
-    msg.type === "OA_RUNTIME_NEW_CHAT" ||
-    msg.type === "OA_RUNTIME_COLLECT_LAST"
-  ) {
-    if (window !== window.top) return false;
+function capabilityUnsupportedResponse(site, requestId = "") {
+  const runtime = globalThis.__ASK_AI_TOGETHER_RUNTIME__;
+  if (runtime?.makeOutcome) {
+    return runtime.makeOutcome("capability-unsupported", {
+      action: "attachFiles",
+      requestId,
+      providerId: site.id,
+      capabilities: [
+        {
+          siteId: site.id,
+          supportsAttachments: false,
+          attachmentMode: "unsupported"
+        }
+      ]
+    });
   }
-  if (msg.type === "OA_RUNTIME_CHAT") {
-    void sendPrompt({
-      message: msg.message || "",
-      files: msg.files || [],
-      requestId: msg.requestId || ""
-    }).catch(() => {});
-    sendResponse({ ok: true });
-    return false;
-  }
-  if (msg.type === "OA_RUNTIME_ATTACH_FILES") {
-    const site = currentSite() || GENERIC_SITE;
-    const inputEl = findFirst(site.inputSelectors);
-    if (!inputEl) {
-      sendResponse({ ok: false, reason: "input-not-found" });
+  return {
+    ok: false,
+    status: "capability-unsupported",
+    action: "attachFiles",
+    requestId,
+    providerId: site.id
+  };
+}
+
+const shouldRegisterRuntimeMessageListener = !globalThis.__ASK_AI_TOGETHER_RUNTIME__ ||
+  globalThis.__ASK_AI_TOGETHER_RUNTIME__.markListenerRegistered?.("compatibility-content-runtime-message") !== false;
+
+if (shouldRegisterRuntimeMessageListener) {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg || !msg.type) return false;
+    if (
+      msg.type === "OA_RUNTIME_CHAT" ||
+      msg.type === "OA_RUNTIME_ATTACH_FILES" ||
+      msg.type === "OA_RUNTIME_NEW_CHAT" ||
+      msg.type === "OA_RUNTIME_COLLECT_LAST"
+    ) {
+      if (window !== window.top) return false;
+    }
+    if (msg.type === "OA_RUNTIME_CHAT") {
+      const envelope = makeRuntimeEnvelope(msg, "sendPrompt", {
+        message: String(msg.message || ""),
+        files: msg.files || []
+      });
+      const validation = validateRuntimeEnvelope(envelope, {
+        disallowFilePayload: true,
+        requireRequestId: false
+      });
+      if (!validation.ok) {
+        const site = currentSite() || GENERIC_SITE;
+        const status = validation.errors.includes("file-payload-unsupported") ? "capability-unsupported" : "transport-failed";
+        postSendProgress(String(msg.requestId || ""), effectiveCompatibilitySiteId(site, msg.siteId), status, {
+          reason: validation.errors.join(",")
+        });
+        sendResponse({
+          ok: false,
+          status,
+          errors: validation.errors
+        });
+        return false;
+      }
+      const transport = getRuntimeTransport();
+      if (!transport?.sendPrompt) {
+        sendResponse({ ok: false, status: "runtime-not-ready" });
+        return false;
+      }
+      void transport.sendPrompt([validation.envelope.providerId], msg.message || "", {
+        requestId: validation.envelope.requestId,
+        payload: validation.envelope.payload
+      })
+        .then((outcome) => {
+          sendResponse(outcome || { ok: false, status: "transport-failed" });
+        })
+        .catch((error) => {
+          sendResponse({
+            ok: false,
+            status: "transport-failed",
+            error: String(error?.message || error || "")
+          });
+        });
+      return true;
+    }
+    if (msg.type === "OA_RUNTIME_ATTACH_FILES") {
+      const site = currentSite() || GENERIC_SITE;
+      const configuredSiteId = rememberCompatibilityConfiguredSiteId(msg?.siteId || msg?.targetSiteId || msg?.providerId);
+      const effectiveSite = {
+        ...site,
+        id: effectiveCompatibilitySiteId(site, configuredSiteId)
+      };
+      const outcome = capabilityUnsupportedResponse(effectiveSite, String(msg.requestId || ""));
+      sendResponse(outcome);
       return false;
     }
-    void attachFiles(inputEl, msg.files || [], site.id)
-      .then((ok) => sendResponse({ ok }))
-      .catch(() => sendResponse({ ok: false }));
-    return true;
-  }
-  if (msg.type === "OA_RUNTIME_NEW_CHAT") {
-    newChat();
-    sendResponse({ ok: true });
+    if (msg.type === "OA_RUNTIME_NEW_CHAT") {
+      const envelope = makeRuntimeEnvelope(msg, "newChat");
+      const validation = validateRuntimeEnvelope(envelope, { requireRequestId: false });
+      if (!validation.ok) {
+        sendResponse({ ok: false, status: "transport-failed", errors: validation.errors });
+        return false;
+      }
+      const transport = getRuntimeTransport();
+      if (!transport?.newChat) {
+        sendResponse({ ok: false, status: "runtime-not-ready" });
+        return false;
+      }
+      void transport.newChat([validation.envelope.providerId], {
+        requestId: validation.envelope.requestId
+      }).catch(() => {});
+      sendResponse({ ok: true, status: "response-found" });
+      return false;
+    }
+    if (msg.type === "OA_RUNTIME_COLLECT_LAST") {
+      const envelope = makeRuntimeEnvelope(msg, "collectLatest");
+      const validation = validateRuntimeEnvelope(envelope, { requireRequestId: false });
+      if (!validation.ok) {
+        sendResponse({ ok: false, status: "transport-failed", errors: validation.errors });
+        return false;
+      }
+      const site = currentSite() || GENERIC_SITE;
+      const transport = getRuntimeTransport();
+      if (!transport?.collectLatest) {
+        sendResponse({ ok: false, status: "runtime-not-ready", siteId: validation.envelope.providerId, text: "" });
+        return false;
+      }
+      void transport.collectLatest([validation.envelope.providerId], {
+        requestId: validation.envelope.requestId
+      })
+        .then((outcome) => {
+          sendResponse({
+            ok: outcome.ok !== false,
+            status: outcome.status,
+            siteId: validation.envelope.providerId,
+            text: outcome.text || ""
+          });
+        })
+        .catch(() => sendResponse({ ok: false, status: "transport-failed", siteId: validation.envelope.providerId, text: "" }));
+      return true;
+    }
     return false;
-  }
-  if (msg.type === "OA_RUNTIME_COLLECT_LAST") {
-    const site = currentSite() || GENERIC_SITE;
-    sendResponse({ ok: true, siteId: site.id, text: extractLatestResponseText() });
-    return false;
-  }
-  return false;
-});
+  });
+}
 
 let lastHref = location.href;
 function postUrlUpdate() {
   const site = currentSite() || GENERIC_SITE;
   const payload = {
-    siteId: site.id,
+    siteId: effectiveCompatibilitySiteId(site),
     url: location.href
   };
   notifyExtension({ type: "OA_UPDATE_HISTORY", payload });
 }
 
-if (isTopLevelAiSurface()) {
+let topLevelRuntimeEventsRegistered = false;
+
+function shouldRegisterTopLevelRuntimeEvents() {
+  const runtime = globalThis.__ASK_AI_TOGETHER_RUNTIME__;
+  return !runtime || runtime.markListenerRegistered?.("compatibility-content-top-level-events") !== false;
+}
+
+function ensureTopLevelRuntimeEventsRegistered() {
+  if (topLevelRuntimeEventsRegistered || !isTopLevelAiSurface()) return;
+  if (!shouldRegisterTopLevelRuntimeEvents()) return;
+  topLevelRuntimeEventsRegistered = true;
   document.addEventListener("mouseup", showQuoteButton);
   document.addEventListener("touchend", showQuoteButton);
   document.addEventListener("click", (event) => {
@@ -153,3 +251,5 @@ if (isTopLevelAiSurface()) {
     postUrlUpdate();
   }, 600);
 }
+
+ensureTopLevelRuntimeEventsRegistered();

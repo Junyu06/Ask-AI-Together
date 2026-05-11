@@ -12,18 +12,8 @@
     tileLayoutPreset: "oa_tile_layout_preset"
   };
 
-  const BUILTIN_SITES = [
-    { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com/" },
-    { id: "deepseek", name: "DeepSeek", url: "https://chat.deepseek.com/" },
-    { id: "kimi", name: "Kimi", url: "https://www.kimi.com/" },
-    { id: "qwen", name: "Qwen", url: "https://chat.qwen.ai/" },
-    { id: "doubao", name: "Doubao", url: "https://www.doubao.com/" },
-    { id: "yuanbao", name: "Yuanbao", url: "https://yuanbao.tencent.com/" },
-    { id: "grok", name: "Grok", url: "https://grok.com/" },
-    { id: "claude", name: "Claude", url: "https://claude.ai/" },
-    { id: "gemini", name: "Gemini", url: "https://gemini.google.com/" },
-    { id: "perplexity", name: "Perplexity", url: "https://www.perplexity.ai/" }
-  ];
+  const providerCatalog = window.AskAiTogetherProviderCatalog;
+  const BUILTIN_SITES = providerCatalog?.getBuiltInSiteEntries?.() || [];
 
   let customSites = [];
   let siteOrder = [];
@@ -288,9 +278,12 @@
   }
 
   async function refreshState() {
+    const sites = selectedSitesPayloadOrdered();
     const res = await chrome.runtime.sendMessage({
       type: "OA_BG_GET_STATE",
-      sites: selectedSitesPayloadOrdered()
+      sites,
+      origin: await window.getOptionsPageOriginPayload?.(),
+      targetHints: await window.getOptionsPageTargetHints?.(sites)
     });
     const targets = res?.targets || {};
     const rows = selectedSiteIdsOrdered().map((siteId) => {
@@ -319,12 +312,15 @@
     }
     const layoutEl = document.getElementById("sw-layout-preset");
     const layoutPreset = layoutEl ? layoutEl.value : tileLayoutPreset;
+    const sites = selectedSitesPayloadOrdered();
     const res = await chrome.runtime.sendMessage({
       type: "OA_BG_TILE",
       siteIds,
-      sites: selectedSitesPayloadOrdered(),
+      sites,
       workArea: getWorkArea(),
-      layoutPreset
+      layoutPreset,
+      origin: await window.getOptionsPageOriginPayload?.(),
+      targetHints: await window.getOptionsPageTargetHints?.(sites)
     });
     if (!res?.ok) {
       setPanelStatus(t("settings_tile_failed", { reason: res?.reason || res?.error || "no-windows" }));
@@ -350,7 +346,12 @@
       return;
     }
     setPanelStatus(t("settings_opening"));
-    const res = await chrome.runtime.sendMessage({ type: "OA_BG_OPEN_WINDOWS", sites });
+    const res = await chrome.runtime.sendMessage({
+      type: "OA_BG_OPEN_WINDOWS",
+      sites,
+      origin: await window.getOptionsPageOriginPayload?.(),
+      targetHints: await window.getOptionsPageTargetHints?.(sites)
+    });
     if (!res?.ok) {
       setPanelStatus(t("settings_open_failed", { reason: res?.error || "unknown" }));
       return;
@@ -369,9 +370,12 @@
       setPanelStatus(t("settings_pick_sites"));
       return;
     }
+    const sites = selectedSitesPayloadOrdered();
     const st = await chrome.runtime.sendMessage({
       type: "OA_BG_GET_STATE",
-      sites: selectedSitesPayloadOrdered()
+      sites,
+      origin: await window.getOptionsPageOriginPayload?.(),
+      targetHints: await window.getOptionsPageTargetHints?.(sites)
     });
     const targets = st?.targets || {};
     const target = siteIds.find((id) => targets[id]?.windowId);

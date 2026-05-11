@@ -23,6 +23,24 @@ function postSendProgress(requestId, siteId, phase, extra = {}) {
   });
 }
 
+function makeContentRuntimeOutcome(status, fields = {}) {
+  const runtime = globalThis.__ASK_AI_TOGETHER_RUNTIME__;
+  if (runtime?.makeOutcome) return runtime.makeOutcome(status, fields);
+  return {
+    ok: status === "response-found" || status === "response-empty" || status === "send-submitted",
+    status,
+    timestamp: Date.now(),
+    ...fields
+  };
+}
+
+function effectiveContentSiteId(site, packet = {}) {
+  const detectedSiteId = String(site?.id || "").trim();
+  const configuredSiteId = String(packet?.siteId || packet?.providerId || "").trim();
+  if ((!detectedSiteId || detectedSiteId === "generic") && configuredSiteId) return configuredSiteId;
+  return detectedSiteId || configuredSiteId || "generic";
+}
+
 function captureSendSnapshot(site, inputEl) {
   const replyNodes = collectReplyNodes(site, inputEl);
   return {
@@ -83,43 +101,80 @@ function waitForSendAcknowledgement(site, inputEl, message, baseline, timeoutMs 
 
 async function sendPrompt(packet) {
   const site = currentSite() || GENERIC_SITE;
+  const providerId = effectiveContentSiteId(site, typeof packet === "object" ? packet : {});
   const message = typeof packet === "string" ? packet : String(packet?.message || "");
   const files = Array.isArray(packet?.files) ? packet.files : Array.isArray(packet?.images) ? packet.images : [];
   const requestId = String(packet?.requestId || "");
 
-  const inputEl = findFirst(site.inputSelectors);
-  if (!inputEl) {
-    postSendProgress(requestId, site.id, "failed", { reason: "input-not-found" });
-    return;
+  if (files.length) {
+    postSendProgress(requestId, providerId, "capability-unsupported", { reason: "attachments-unsupported" });
+    return makeContentRuntimeOutcome("capability-unsupported", {
+      action: "sendPrompt",
+      requestId,
+      providerId,
+      capabilities: [
+        {
+          siteId: providerId,
+          supportsAttachments: false,
+          attachmentMode: "unsupported"
+        }
+      ]
+    });
   }
 
-  postSendProgress(requestId, site.id, "injecting");
+  const inputEl = findFirst(site.inputSelectors);
+  if (!inputEl) {
+    postSendProgress(requestId, providerId, "failed", { reason: "input-not-found" });
+    return makeContentRuntimeOutcome("input-injection-failed", {
+      action: "sendPrompt",
+      requestId,
+      providerId,
+      reason: "input-not-found"
+    });
+  }
+
+  postSendProgress(requestId, providerId, "injecting");
   const beforeSnapshot = captureSendSnapshot(site, inputEl);
 
   const hasText = message.length > 0;
   if (hasText && !setInputValue(inputEl, message, site.id)) {
-    postSendProgress(requestId, site.id, "failed", { reason: "set-input-failed" });
-    return;
+    postSendProgress(requestId, providerId, "failed", { reason: "set-input-failed" });
+    return makeContentRuntimeOutcome("input-injection-failed", {
+      action: "sendPrompt",
+      requestId,
+      providerId,
+      reason: "set-input-failed"
+    });
   }
   if (!hasText) inputEl.focus();
 
-  if (files.length) {
-    await attachFiles(inputEl, files, site.id);
-  }
-
-  await sleep(files.length ? 220 : 80);
+  await sleep(80);
   const submitted = await clickSendWithRetry(site, inputEl, {
-    attempts: files.length ? 20 : 4,
-    delay: files.length ? 250 : 100
+    attempts: 4,
+    delay: 100
   });
   if (!submitted) {
-    postSendProgress(requestId, site.id, "failed", { reason: "submit-failed" });
-    return;
+    postSendProgress(requestId, providerId, "failed", { reason: "submit-failed" });
+    return makeContentRuntimeOutcome("send-failed", {
+      action: "sendPrompt",
+      requestId,
+      providerId,
+      reason: "submit-failed"
+    });
   }
 
-  postSendProgress(requestId, site.id, "submitted");
+  if (typeof rememberSubmittedPromptText === "function") {
+    rememberSubmittedPromptText(message);
+  }
+  postSendProgress(requestId, providerId, "submitted");
   const acknowledged = await waitForSendAcknowledgement(site, inputEl, message, beforeSnapshot);
-  postSendProgress(requestId, site.id, acknowledged ? "acknowledged" : "timeout");
+  postSendProgress(requestId, providerId, acknowledged ? "acknowledged" : "submitted-unacknowledged");
+  return makeContentRuntimeOutcome(acknowledged ? "response-found" : "send-submitted", {
+    action: "sendPrompt",
+    requestId,
+    providerId,
+    reason: acknowledged ? undefined : "acknowledgement-pending"
+  });
 }
 
 function clickByText() {

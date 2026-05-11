@@ -1,5 +1,48 @@
 "use strict";
 
+const historyService = globalThis.AskAiTogetherHistoryService;
+
+function runtimeApi() {
+  return globalThis.__ASK_AI_TOGETHER_RUNTIME__ || null;
+}
+
+function makeBackgroundRuntimeOutcome(status, fields = {}) {
+  const runtime = runtimeApi();
+  if (runtime?.makeOutcome) return runtime.makeOutcome(status, fields);
+  return {
+    ok: status === "response-found" || status === "response-empty",
+    status,
+    timestamp: Date.now(),
+    ...fields
+  };
+}
+
+function normalizeTargetSiteIds(siteIds, siteEntries) {
+  const ids = Array.isArray(siteIds) ? siteIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
+  if (ids.length) return ids;
+  if (!Array.isArray(siteEntries)) return [];
+  return siteEntries.map((entry) => String(entry?.siteId || "").trim()).filter(Boolean);
+}
+
+function registerBackgroundProviders() {
+  const runtime = runtimeApi();
+  if (!runtime?.registerProviderDefinitions) return;
+  const providers = Object.keys(BUILTIN_SITE_URLS).map((siteId) => ({
+    id: siteId,
+    displayName: SITE_DISPLAY_NAMES[siteId] || siteId,
+    matchHosts: SITE_HOSTS[siteId] || [],
+    homeUrl: BUILTIN_SITE_URLS[siteId],
+    newChatUrl: BUILTIN_SITE_NEW_CHAT_URLS[siteId] || BUILTIN_SITE_URLS[siteId],
+    capabilities: {
+      supportsAttachments: false,
+      attachmentMode: "unsupported"
+    }
+  }));
+  runtime.registerProviderDefinitions(providers, { mode: "compatibility" });
+}
+
+registerBackgroundProviders();
+
 async function restoreInitiatorFocus(sourceWindowId, sourceTabId) {
   if (sourceTabId != null) {
     try {
@@ -27,70 +70,30 @@ async function withInitiatorFocusRestored(origin, work) {
   }
 }
 
-function isRootLikePath(pathname) {
-  const p = String(pathname || "").trim();
-  return (
-    !p ||
-    p === "/" ||
-    p === "/new" ||
-    p === "/new/" ||
-    p === "/chat" ||
-    p === "/chat/" ||
-    p === "/app" ||
-    p === "/app/" ||
-    /^\/u\/\d+\/app\/?$/.test(p)
-  );
-}
-
-function shouldReplaceHistoryUrl(previousUrl, nextUrl) {
-  const prev = String(previousUrl || "").trim();
-  const next = String(nextUrl || "").trim();
-  if (!/^https?:\/\//i.test(next)) return false;
-  if (!prev) return true;
-  if (prev === next) return false;
-  try {
-    const prevUrl = new URL(prev);
-    const nextUrlObj = new URL(next);
-    if (prevUrl.origin !== nextUrlObj.origin) return false;
-    if (isRootLikePath(prevUrl.pathname) && !isRootLikePath(nextUrlObj.pathname)) return true;
-    if (!prevUrl.search && !prevUrl.hash && (nextUrlObj.search || nextUrlObj.hash)) return true;
-    if (
-      prevUrl.pathname !== nextUrlObj.pathname &&
-      nextUrlObj.pathname.startsWith(`${prevUrl.pathname.replace(/\/+$/, "")}/`)
-    ) {
-      return true;
-    }
-  } catch (_e) {
-    return true;
-  }
-  return false;
-}
-
 async function patchRecentHistoryUrl(siteId, url) {
-  const cleanSiteId = String(siteId || "").trim();
-  const cleanUrl = String(url || "").trim();
-  if (!cleanSiteId || !/^https?:\/\//i.test(cleanUrl)) return;
+  if (!historyService?.patchRecentHistoryUrl) return false;
+  return historyService.patchRecentHistoryUrl(siteId, url);
+}
 
-  const data = await chrome.storage.local.get(["oa_history"]);
-  const history = Array.isArray(data.oa_history) ? data.oa_history.slice() : [];
-  let changed = false;
-  const now = Date.now();
-
-  for (const entry of history) {
-    if (!entry || typeof entry !== "object") continue;
-    const ts = Number(entry.ts) || 0;
-    if (ts && now - ts > 30 * 60 * 1000) break;
-    const urls = entry.urls && typeof entry.urls === "object" ? { ...entry.urls } : null;
-    if (!urls || !(cleanSiteId in urls)) continue;
-    if (!shouldReplaceHistoryUrl(urls[cleanSiteId], cleanUrl)) break;
-    urls[cleanSiteId] = cleanUrl;
-    entry.urls = urls;
-    changed = true;
-    break;
+async function runHistoryMutation(payload) {
+  const method = String(payload?.method || "");
+  const args = Array.isArray(payload?.args) ? payload.args : [];
+  const allowed = new Set([
+    "saveHistory",
+    "prependEntry",
+    "deleteEntryById",
+    "updateEntryById",
+    "patchHistoryUrl",
+    "patchRecentHistoryUrl"
+  ]);
+  if (!allowed.has(method) || typeof historyService?.[method] !== "function") {
+    return { ok: false, error: "unsupported-history-mutation" };
   }
-
-  if (changed) {
-    await chrome.storage.local.set({ oa_history: history.slice(0, 200) });
+  try {
+    const result = await historyService[method](...args);
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
   }
 }
 
@@ -143,32 +146,287 @@ async function closeAllTargets() {
   return closeTargets(siteIds);
 }
 
+async function getCapabilitiesForTargets(siteIds, siteEntries) {
+  const ids = normalizeTargetSiteIds(siteIds, siteEntries);
+  const runtime = runtimeApi();
+  if (runtime?.getCapabilities) return runtime.getCapabilities(ids, "compatibility");
+  return makeBackgroundRuntimeOutcome("response-found", {
+    capabilities: ids.map((siteId) => ({
+      siteId,
+      supportsAttachments: false,
+      attachmentMode: "unsupported"
+    }))
+  });
+}
+
+function attachmentUnsupportedOutcome(siteIds, siteEntries, action) {
+  const ids = normalizeTargetSiteIds(siteIds, siteEntries);
+  return makeBackgroundRuntimeOutcome("capability-unsupported", {
+    action,
+    error: "attachments-unsupported",
+    capabilities: ids.map((siteId) => ({
+      siteId,
+      supportsAttachments: false,
+      attachmentMode: "unsupported"
+    }))
+  });
+}
+
 async function attachFilesToTargets(siteIds, siteEntries, files = []) {
-  if (Array.isArray(siteEntries) && siteEntries.length) {
-    await syncTargetsFromTabsForSites(siteEntries);
-  }
-  const targets = await loadTargets();
-  const ids = Array.isArray(siteIds) ? siteIds : [];
   const attachments = Array.isArray(files) ? files : [];
   if (!attachments.length) return { ok: true, attachedCount: 0 };
+  return attachmentUnsupportedOutcome(siteIds, siteEntries, "attachFiles");
+}
 
-  let attachedCount = 0;
-  await Promise.all(
-    ids.map(async (siteId) => {
-      const rec = targets[siteId];
-      if (!rec?.tabId) return;
-      try {
-        await chrome.tabs.sendMessage(rec.tabId, {
-          type: "OA_RUNTIME_ATTACH_FILES",
-          files: attachments
-        });
-        attachedCount += 1;
-      } catch (_e) {
-        /* ignore */
+const COMPATIBILITY_CONTENT_RUNTIME_FILES = [
+  "shared/runtime-contract.js",
+  "shared/provider-catalog.js",
+  "shared/quote-helper.js",
+  "content/content-sites.js",
+  "content/content-dom.js",
+  "content/content-response.js",
+  "content/content-input.js",
+  "content/content-attachments.js",
+  "content/content-send-runtime.js",
+  "content/content-shared-runtime.js",
+  "content/content-quote-ui.js"
+];
+
+function isMissingContentRuntimeError(error) {
+  const message = String(error?.message || error || "");
+  return /Receiving end does not exist|Could not establish connection/i.test(message);
+}
+
+async function injectCompatibilityContentRuntime(tabId) {
+  if (!Number.isInteger(tabId) || !chrome.scripting?.executeScript) return false;
+  try {
+    const guard = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        if (globalThis.__ASK_AI_TOGETHER_RUNTIME__?.getTransport?.("compatibility-content")) {
+          return { ok: true, alreadyReady: true };
+        }
+        if (globalThis.__ASK_AI_TOGETHER_FULL_RUNTIME_INJECTION_STARTED__) {
+          return { ok: false, reason: "full-runtime-injection-already-started" };
+        }
+        globalThis.__ASK_AI_TOGETHER_FULL_RUNTIME_INJECTION_STARTED__ = true;
+        return { ok: true, shouldInject: true };
       }
-    })
-  );
-  return { ok: true, attachedCount };
+    });
+    const guardResult = guard?.[0]?.result || {};
+    if (guardResult.alreadyReady) return true;
+    if (!guardResult.shouldInject) return false;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: COMPATIBILITY_CONTENT_RUNTIME_FILES
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        globalThis.__ASK_AI_TOGETHER_FULL_RUNTIME_INJECTION_COMPLETE__ = true;
+      }
+    });
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function probeCompatibilityContentRuntime(tabId) {
+  if (!Number.isInteger(tabId) || !chrome.scripting?.executeScript) return null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const runtime = globalThis.__ASK_AI_TOGETHER_RUNTIME__ || null;
+        return {
+          hasRuntime: Boolean(runtime),
+          hasTransport: Boolean(runtime?.getTransport?.("compatibility-content")),
+          bootstrapState: runtime?.bootstrap?.state || "",
+          hasRuntimeMessageListener: Boolean(runtime?.listenerFlags?.["compatibility-content-runtime-message"]),
+          hasRecoveryListener: Boolean(runtime?.listenerFlags?.["compatibility-content-runtime-recovery"]),
+          listenerFlags: runtime?.listenerFlags || {}
+        };
+      }
+    });
+    return results?.[0]?.result || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function injectCompatibilitySharedTransport(tabId) {
+  if (!Number.isInteger(tabId) || !chrome.scripting?.executeScript) return false;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content/content-shared-runtime.js"]
+    });
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function registerCompatibilityContentRuntimeRecovery(tabId) {
+  if (!Number.isInteger(tabId) || !chrome.scripting?.executeScript) return false;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const runtime = globalThis.__ASK_AI_TOGETHER_RUNTIME__ || null;
+        const transport = runtime?.getTransport?.("compatibility-content");
+        if (!runtime || !transport) return { ok: false, reason: "runtime-not-ready" };
+        if (runtime.markListenerRegistered) {
+          if (runtime.markListenerRegistered("compatibility-content-runtime-recovery") === false) {
+            return { ok: true, registered: false, alreadyRegistered: true };
+          }
+        } else if (globalThis.__ASK_AI_TOGETHER_RECOVERY_LISTENER_REGISTERED__) {
+          return { ok: true, registered: false, alreadyRegistered: true };
+        } else {
+          globalThis.__ASK_AI_TOGETHER_RECOVERY_LISTENER_REGISTERED__ = true;
+        }
+
+        globalThis.__ASK_AI_TOGETHER_RECOVERY_LISTENER_LOADS__ =
+          (Number(globalThis.__ASK_AI_TOGETHER_RECOVERY_LISTENER_LOADS__) || 0) + 1;
+
+        function makeOutcome(status, fields = {}) {
+          if (runtime?.makeOutcome) return runtime.makeOutcome(status, fields);
+          return Object.assign({ ok: status !== "transport-failed" && status !== "runtime-not-ready", status }, fields);
+        }
+
+        function providerIdFromMessage(msg) {
+          return String(msg?.siteId || msg?.targetSiteId || msg?.providerId || "generic");
+        }
+
+        chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+          if (!msg || !msg.type) return false;
+          if (
+            msg.type !== "OA_RUNTIME_CHAT" &&
+            msg.type !== "OA_RUNTIME_ATTACH_FILES" &&
+            msg.type !== "OA_RUNTIME_NEW_CHAT" &&
+            msg.type !== "OA_RUNTIME_COLLECT_LAST"
+          ) {
+            return false;
+          }
+          const providerId = providerIdFromMessage(msg);
+          const requestId = String(msg.requestId || "");
+
+          if (msg.type === "OA_RUNTIME_ATTACH_FILES") {
+            sendResponse(makeOutcome("capability-unsupported", {
+              action: "attachFiles",
+              requestId,
+              providerId,
+              capabilities: [{ siteId: providerId, supportsAttachments: false, attachmentMode: "unsupported" }]
+            }));
+            return false;
+          }
+
+          const activeTransport = runtime?.getTransport?.("compatibility-content");
+          if (!activeTransport) {
+            sendResponse(makeOutcome("runtime-not-ready", { requestId, providerId }));
+            return false;
+          }
+
+          if (msg.type === "OA_RUNTIME_CHAT") {
+            if (!activeTransport.sendPrompt) {
+              sendResponse(makeOutcome("runtime-not-ready", { action: "sendPrompt", requestId, providerId }));
+              return false;
+            }
+            void activeTransport.sendPrompt([providerId], String(msg.message || ""), {
+              requestId,
+              payload: { action: "sendPrompt", message: String(msg.message || ""), files: msg.files || [] }
+            })
+              .then((outcome) => sendResponse(outcome || makeOutcome("transport-failed", { action: "sendPrompt", requestId, providerId })))
+              .catch((error) => sendResponse(makeOutcome("transport-failed", {
+                action: "sendPrompt",
+                requestId,
+                providerId,
+                error: String(error?.message || error || "")
+              })));
+            return true;
+          }
+
+          if (msg.type === "OA_RUNTIME_NEW_CHAT") {
+            if (!activeTransport.newChat) {
+              sendResponse(makeOutcome("runtime-not-ready", { action: "newChat", requestId, providerId }));
+              return false;
+            }
+            void activeTransport.newChat([providerId], { requestId }).catch(() => {});
+            sendResponse(makeOutcome("response-found", { action: "newChat", requestId, providerId }));
+            return false;
+          }
+
+          if (msg.type === "OA_RUNTIME_COLLECT_LAST") {
+            if (!activeTransport.collectLatest) {
+              sendResponse(makeOutcome("runtime-not-ready", { action: "collectLatest", requestId, providerId, siteId: providerId, text: "" }));
+              return false;
+            }
+            void activeTransport.collectLatest([providerId], { requestId })
+              .then((outcome) => sendResponse({
+                ok: outcome?.ok !== false,
+                status: outcome?.status || "response-empty",
+                siteId: providerId,
+                text: outcome?.text || ""
+              }))
+              .catch(() => sendResponse(makeOutcome("transport-failed", {
+                action: "collectLatest",
+                requestId,
+                providerId,
+                siteId: providerId,
+                text: ""
+              })));
+            return true;
+          }
+
+          return false;
+        });
+
+        return {
+          ok: true,
+          registered: true,
+          loads: globalThis.__ASK_AI_TOGETHER_RECOVERY_LISTENER_LOADS__
+        };
+      }
+    });
+    return results?.[0]?.result?.ok === true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function recoverCompatibilityContentRuntime(tabId) {
+  const probe = await probeCompatibilityContentRuntime(tabId);
+  if (!probe?.hasRuntime) return injectCompatibilityContentRuntime(tabId);
+  if (!probe.hasTransport) {
+    await injectCompatibilitySharedTransport(tabId);
+    const refreshed = await probeCompatibilityContentRuntime(tabId);
+    if (!refreshed?.hasTransport) return false;
+    if (refreshed.hasRuntimeMessageListener) return true;
+    return registerCompatibilityContentRuntimeRecovery(tabId);
+  }
+  if (probe.hasRuntimeMessageListener || probe.hasRecoveryListener) return true;
+  return registerCompatibilityContentRuntimeRecovery(tabId);
+}
+
+function isRecoverableRuntimeOutcome(outcome) {
+  return outcome?.ok === false && outcome.status === "runtime-not-ready";
+}
+
+async function sendRuntimeMessageToTarget(tabId, message) {
+  const topFrame = { frameId: 0 };
+  try {
+    const outcome = await chrome.tabs.sendMessage(tabId, message, topFrame);
+    if (isRecoverableRuntimeOutcome(outcome) && await recoverCompatibilityContentRuntime(tabId)) {
+      return chrome.tabs.sendMessage(tabId, message, topFrame);
+    }
+    return outcome;
+  } catch (error) {
+    if (!isMissingContentRuntimeError(error) || !(await recoverCompatibilityContentRuntime(tabId))) {
+      throw error;
+    }
+    return chrome.tabs.sendMessage(tabId, message, topFrame);
+  }
 }
 
 /** 与旧版分屏页类似：广播发送成功后写入本地 oa_history（简化版，无去重合并） */
@@ -176,7 +434,7 @@ async function appendHistoryAfterSend(message, siteIds, targets) {
   const text = String(message || "").trim();
   if (!text) return;
   const ids = Array.isArray(siteIds) ? siteIds : [];
-  const data = await chrome.storage.local.get(["oa_custom_sites", "oa_history"]);
+  const data = await chrome.storage.local.get(["oa_custom_sites"]);
   const customSites = Array.isArray(data.oa_custom_sites) ? data.oa_custom_sites : [];
   const nameById = new Map(customSites.map((s) => [s.id, s.name]));
   const displayNames = ids.map((id) => nameById.get(id) || SITE_DISPLAY_NAMES[id] || id);
@@ -191,7 +449,6 @@ async function appendHistoryAfterSend(message, siteIds, targets) {
       /* ignore */
     }
   }
-  const history = Array.isArray(data.oa_history) ? data.oa_history : [];
   const entry = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     prompt: text.slice(0, 2000),
@@ -201,69 +458,164 @@ async function appendHistoryAfterSend(message, siteIds, targets) {
     sites: displayNames,
     urls
   };
-  history.unshift(entry);
-  await chrome.storage.local.set({ oa_history: history.slice(0, 200) });
+  await historyService?.prependEntry?.(entry);
 }
 
-async function sendPromptToTargets(siteIds, message, requestId, siteEntries, files = []) {
+function siteUrlForAction(siteId, siteEntries) {
+  const clean = String(siteId || "");
+  const entry = Array.isArray(siteEntries)
+    ? siteEntries.find((candidate) => String(candidate?.siteId || "") === clean)
+    : null;
+  return String(entry?.url || "").trim() || BUILTIN_SITE_URLS[clean] || "";
+}
+
+async function ensureTargetsForAction(siteIds, siteEntries, targets, origin, targetHints) {
+  const ids = Array.isArray(siteIds) ? siteIds.map((id) => String(id || "")).filter(Boolean) : [];
+  let changed = false;
+  for (const siteId of ids) {
+    const url = siteUrlForAction(siteId, siteEntries);
+    const existing = targets[siteId];
+    if (existing?.tabId && typeof getValidTargetTab === "function") {
+      const validTab = await getValidTargetTab(existing, siteId, url);
+      if (validTab) {
+        if (existing.windowId !== validTab.windowId || existing.tabId !== validTab.id) {
+          targets[siteId] = { siteId, windowId: validTab.windowId, tabId: validTab.id, transport: "window" };
+          changed = true;
+        }
+        continue;
+      }
+      delete targets[siteId];
+      changed = true;
+    } else if (existing?.tabId) {
+      continue;
+    }
+
+    let tab = null;
+    if (typeof targetHintForSite === "function" && typeof getValidTargetTab === "function") {
+      const hint = targetHintForSite(targetHints, siteId);
+      if (hint?.tabId) tab = await getValidTargetTab({ tabId: hint.tabId }, siteId, url);
+    }
+    if (!tab && typeof findTabForAiSite === "function") {
+      tab = await findTabForAiSite(siteId, url, origin);
+    }
+    if (tab?.id != null && tab.windowId != null) {
+      targets[siteId] = { siteId, windowId: tab.windowId, tabId: tab.id, transport: "window" };
+      changed = true;
+    }
+  }
+  if (changed) await saveTargets(targets);
+}
+
+async function sendPromptToTargets(siteIds, message, requestId, siteEntries, files = [], origin, targetHints) {
+  const attachments = Array.isArray(files) ? files : [];
+  if (attachments.length) {
+    return attachmentUnsupportedOutcome(siteIds, siteEntries, "sendPrompt");
+  }
   if (Array.isArray(siteEntries) && siteEntries.length) {
-    await syncTargetsFromTabsForSites(siteEntries);
+    await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
   }
   const targets = await loadTargets();
   const text = String(message || "");
   const rid = String(requestId || "");
   const ids = Array.isArray(siteIds) ? siteIds : [];
-  const attachments = Array.isArray(files) ? files : [];
-  await Promise.all(
+  await ensureTargetsForAction(ids, siteEntries, targets, origin, targetHints);
+  const outcomes = await Promise.all(
     ids.map(async (siteId) => {
       const rec = targets[siteId];
-      if (!rec?.tabId) return;
+      if (!rec?.tabId) {
+        return makeBackgroundRuntimeOutcome("transport-failed", {
+          action: "sendPrompt",
+          requestId: rid,
+          providerId: siteId,
+          reason: "missing-tab"
+        });
+      }
       try {
-        await chrome.tabs.sendMessage(rec.tabId, {
+        const outcome = await sendRuntimeMessageToTarget(rec.tabId, {
           type: "OA_RUNTIME_CHAT",
           message: text,
           requestId: rid,
-          files: attachments
+          siteId
+        });
+        return outcome || makeBackgroundRuntimeOutcome("transport-failed", {
+          action: "sendPrompt",
+          requestId: rid,
+          providerId: siteId,
+          reason: "empty-runtime-response"
         });
       } catch (_e) {
         broadcastToExtensionPages({
           type: "OA_SEND_PROGRESS",
           payload: { requestId: rid, siteId, phase: "failed", reason: "tab-unreachable" }
         });
+        return makeBackgroundRuntimeOutcome("transport-failed", {
+          action: "sendPrompt",
+          requestId: rid,
+          providerId: siteId,
+          reason: "tab-unreachable"
+        });
       }
     })
   );
-  if (text.trim()) {
-    await appendHistoryAfterSend(text, ids, targets);
+  const failed = outcomes.filter((outcome) => outcome?.ok === false);
+  const succeededIds = ids.filter((_siteId, index) => outcomes[index]?.ok !== false);
+  if (failed.length && !succeededIds.length) {
+    return {
+      ok: false,
+      status: failed[0]?.status || "transport-failed",
+      outcomes
+    };
   }
-  return { ok: true };
+  if (text.trim() && succeededIds.length) {
+    await appendHistoryAfterSend(text, succeededIds, targets);
+  }
+  if (failed.length) {
+    return {
+      ok: true,
+      status: "partial-success",
+      partialSuccess: true,
+      sentCount: succeededIds.length,
+      failedCount: failed.length,
+      outcomes
+    };
+  }
+  return { ok: true, status: "response-found", outcomes };
 }
 
 /**
  * 从各独立 AI 标签页抓取最新回复（与旧版 COLLECT_LAST_RESPONSE 语义一致）。
  */
-async function collectLastFromTargets(siteIds, siteEntries) {
+async function collectLastFromTargets(siteIds, siteEntries, origin, targetHints) {
   if (Array.isArray(siteEntries) && siteEntries.length) {
-    await syncTargetsFromTabsForSites(siteEntries);
+    await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
   }
   const targets = await loadTargets();
   const ids = Array.isArray(siteIds) ? siteIds : [];
+  await ensureTargetsForAction(ids, siteEntries, targets, origin, targetHints);
   const sections = [];
   for (const siteId of ids) {
     const rec = targets[siteId];
     let text = "";
+    let status = "transport-failed";
+    let reason = "missing-tab";
     if (rec?.tabId) {
       try {
-        const r = await chrome.tabs.sendMessage(rec.tabId, { type: "OA_RUNTIME_COLLECT_LAST" });
+        const r = await sendRuntimeMessageToTarget(rec.tabId, { type: "OA_RUNTIME_COLLECT_LAST", siteId });
         text = r?.text || "";
+        status = r?.status || (text ? "response-found" : "response-empty");
+        reason = r?.reason || r?.error || "";
       } catch (_e) {
         text = "";
+        status = "transport-failed";
+        reason = "tab-unreachable";
       }
     }
     sections.push({
       siteId,
       siteName: SITE_DISPLAY_NAMES[siteId] || siteId,
-      text
+      text,
+      status,
+      reason
     });
   }
   return { ok: true, sections };
@@ -272,19 +624,20 @@ async function collectLastFromTargets(siteIds, siteEntries) {
 /** 串行执行，避免多路并发时各窗口 chrome.windows.update 抢焦点导致死循环/卡死 */
 let __oaNewChatChain = Promise.resolve();
 
-async function newChatOnTargets(siteIds, siteEntries, origin) {
+async function newChatOnTargets(siteIds, siteEntries, origin, targetHints) {
   const job = async () => {
     return withInitiatorFocusRestored(origin, async () => {
       if (Array.isArray(siteEntries) && siteEntries.length) {
-        await syncTargetsFromTabsForSites(siteEntries);
+        await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
       }
       const targets = await loadTargets();
       const ids = Array.isArray(siteIds) ? siteIds : [];
+      await ensureTargetsForAction(ids, siteEntries, targets, origin, targetHints);
       for (const siteId of ids) {
         const rec = targets[siteId];
         if (!rec?.tabId) continue;
         try {
-          await chrome.tabs.sendMessage(rec.tabId, { type: "OA_RUNTIME_NEW_CHAT" });
+          await sendRuntimeMessageToTarget(rec.tabId, { type: "OA_RUNTIME_NEW_CHAT", siteId });
           await delay(40);
         } catch (_e) {
           /* ignore */
@@ -301,14 +654,14 @@ async function newChatOnTargets(siteIds, siteEntries, origin) {
 /**
  * 将已绑定标签页导航到历史记录里保存的各站点 URL（恢复当时对话页）。
  */
-async function restoreHistoryUrlsToTargets(urls, siteEntries, origin) {
+async function restoreHistoryUrlsToTargets(urls, siteEntries, origin, targetHints) {
   if (!urls || typeof urls !== "object") {
     return { ok: false, error: "no-urls" };
   }
   return withInitiatorFocusRestored(origin, async () => {
     const historySites = Array.isArray(siteEntries) ? siteEntries.filter((entry) => String(entry?.siteId || "")) : [];
     if (historySites.length) {
-      await syncTargetsFromTabsForSites(historySites);
+      await syncTargetsFromTabsForSites(historySites, origin, targetHints);
     }
     const targets = await loadTargets();
     for (const entry of historySites) {
@@ -345,9 +698,9 @@ async function restoreHistoryUrlsToTargets(urls, siteEntries, origin) {
   });
 }
 
-async function getState(siteEntries) {
+async function getState(siteEntries, origin, targetHints) {
   if (Array.isArray(siteEntries) && siteEntries.length) {
-    await syncTargetsFromTabsForSites(siteEntries);
+    await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
   }
   const targets = await loadTargets();
   const copy = { ...targets };
@@ -368,3 +721,19 @@ async function getState(siteEntries) {
   }
   return { ok: true, targets: copy };
 }
+
+runtimeApi()?.registerTransport?.("compatibility", {
+  sendPrompt(siteIds, message) {
+    const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    return sendPromptToTargets(siteIds, message, requestId, []);
+  },
+  collectLatest(siteIds) {
+    return collectLastFromTargets(siteIds, []);
+  },
+  newChat(siteIds) {
+    return newChatOnTargets(siteIds, [], {});
+  },
+  getCapabilities(siteIds) {
+    return getCapabilitiesForTargets(siteIds, []);
+  }
+});

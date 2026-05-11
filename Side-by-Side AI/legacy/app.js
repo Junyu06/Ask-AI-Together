@@ -13,20 +13,22 @@ const STORAGE_KEYS = {
   launchMode: "oa_mode"
 };
 
-const BUILTIN_SITES = [
-  { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com/" },
-  { id: "deepseek", name: "DeepSeek", url: "https://chat.deepseek.com/" },
-  { id: "kimi", name: "Kimi", url: "https://www.kimi.com/" },
-  { id: "qwen", name: "Qwen", url: "https://chat.qwen.ai/" },
-  { id: "doubao", name: "Doubao", url: "https://www.doubao.com/" },
-  { id: "yuanbao", name: "Yuanbao", url: "https://yuanbao.tencent.com/" },
-  { id: "grok", name: "Grok", url: "https://grok.com/" },
-  { id: "claude", name: "Claude", url: "https://claude.ai/" },
-  { id: "gemini", name: "Gemini", url: "https://gemini.google.com/" },
-  { id: "perplexity", name: "Perplexity", url: "https://www.perplexity.ai/" }
-];
+const providerCatalog = window.AskAiTogetherProviderCatalog;
+const textFormat = window.AskAiTogetherTextFormat;
+const historyService = window.AskAiTogetherHistoryService;
+const BUILTIN_SITES = providerCatalog?.getBuiltInSiteEntries?.() || [];
+const BUILTIN_SITE_HOSTS = providerCatalog?.getHostMap?.() || {};
+const defaultSiteIds = providerCatalog?.defaultBuiltInSiteIds || ["chatgpt", "deepseek", "kimi"];
 
-const defaultSiteIds = ["chatgpt", "deepseek", "kimi"];
+window.__ASK_AI_TOGETHER_RUNTIME__?.markBootstrapped?.({
+  mode: "legacy",
+  frameRole: "extension-page",
+  state: "legacy-runtime-ready"
+});
+window.__ASK_AI_TOGETHER_RUNTIME__?.registerProviderDefinitions?.(
+  providerCatalog?.getBuiltInProviders?.({ mode: "legacy" }) || [],
+  { mode: "legacy" }
+);
 
 let selectedSiteIds = [];
 let siteUrlState = {};
@@ -49,6 +51,7 @@ let historySummaryModel = "qwen2.5:7b-instruct";
 let panesPerRow = 0;
 let launchMode = "legacy";
 const pendingLatestResponseRequests = new Map();
+const learnedIframeOriginBySiteId = new Map();
 let activeSendRequest = null;
 const HISTORY_URL_PATCH_WINDOW_MS = 25000;
 const paneCacheBySite = new Map();
@@ -179,9 +182,9 @@ const I18N = {
     custom_site_permission_denied: "以下站点未授权，已取消启用：{sites}",
     mode_tab: "模式",
     mode_subtitle: "选择点击扩展图标时的启动模式。",
-    mode_legacy: "分屏页（Legacy，默认）",
-    mode_windows: "多窗口平铺（Windows）",
-    mode_hint: "分屏页在同一标签页内以 iframe 并排展示各 AI；多窗口平铺会为每个 AI 打开独立浏览器窗口。"
+    mode_legacy: "分屏页（默认）",
+    mode_windows: "多窗口平铺（兼容模式）",
+    mode_hint: "先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。"
   },
   en: {
     input_bubble_aria: "Input and actions",
@@ -282,9 +285,9 @@ const I18N = {
     custom_site_permission_denied: "Permission was not granted for: {sites}. They were not enabled.",
     mode_tab: "Mode",
     mode_subtitle: "Choose the launch mode when clicking the extension icon.",
-    mode_legacy: "Split-pane page (Legacy, default)",
-    mode_windows: "Multi-window tiling (Windows)",
-    mode_hint: "Split-pane shows all AIs side-by-side in iframes on one tab; multi-window opens a separate browser window for each AI."
+    mode_legacy: "Split-pane page (default)",
+    mode_windows: "Multi-window tiling (Compatible Mode)",
+    mode_hint: "Use Default mode first. Switch to Compatible Mode if an AI site does not open, stays blank, or does not work correctly."
   }
 };
 let locale = "en";
@@ -361,7 +364,9 @@ async function flushUiFrame() {
 
 function pendingSendSubmittedCount(sendRequest) {
   return sendRequest
-    ? Array.from(sendRequest.siteStates.values()).filter((state) => ["submitted", "acknowledged", "timeout", "failed"].includes(state)).length
+    ? Array.from(sendRequest.siteStates.values()).filter((state) =>
+        ["submitted", "submitted-unacknowledged", "acknowledged", "timeout", "failed"].includes(state)
+      ).length
     : 0;
 }
 
@@ -453,10 +458,10 @@ function updateSendingFeedbackProgress(payload = {}) {
 
   renderActiveSendFeedback();
   const terminal = Array.from(activeSendRequest.siteStates.values()).every((state) =>
-    ["acknowledged", "timeout", "failed"].includes(state)
+    ["acknowledged", "timeout", "failed", "submitted-unacknowledged"].includes(state)
   );
   const hasNonAckTerminal = Array.from(activeSendRequest.siteStates.values()).some((state) =>
-    ["timeout", "failed"].includes(state)
+    ["timeout", "failed", "submitted-unacknowledged"].includes(state)
   );
 
   if (terminal) {
@@ -953,6 +958,9 @@ function normalizeOrderAndSelection() {
 }
 
 async function loadHistory() {
+  if (historyService?.loadHistory) {
+    return historyService.loadHistory();
+  }
   const data = await chrome.storage.local.get([STORAGE_KEYS.history]);
   return Array.isArray(data[STORAGE_KEYS.history]) ? data[STORAGE_KEYS.history] : [];
 }
@@ -1033,6 +1041,16 @@ function originPatternFromUrl(url) {
     const parsed = new URL(String(url || ""));
     if (!/^https?:$/i.test(parsed.protocol)) return "";
     return `${parsed.origin}/*`;
+  } catch (_error) {
+    return "";
+  }
+}
+
+function originFromUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    if (!/^https?:$/i.test(parsed.protocol)) return "";
+    return parsed.origin;
   } catch (_error) {
     return "";
   }
@@ -1173,15 +1191,12 @@ async function renderHistory() {
 async function deleteHistoryById(entryId) {
   const id = String(entryId || "");
   if (!id) return;
-  const history = await loadHistory();
-  const next = history.filter((item) => String(item?.id || "") !== id);
-  if (next.length === history.length) return;
-  await chrome.storage.local.set({ [STORAGE_KEYS.history]: next.slice(0, 200) });
+  const deleted = await historyService?.deleteEntryById?.(id);
+  if (!deleted) return;
   await renderHistory();
 }
 
 async function appendHistory(prompt, siteIds = selectedSiteIds) {
-  const history = await loadHistory();
   const validSiteIds = Array.isArray(siteIds) ? siteIds.filter((id) => getSiteById(id)) : [];
   const summary = await summarizeHistoryPrompt(prompt);
   const displayPrompt = summary.text;
@@ -1196,9 +1211,7 @@ async function appendHistory(prompt, siteIds = selectedSiteIds) {
       .map((site) => site.name),
     urls: urlsForSelectedSites(validSiteIds)
   };
-  history.unshift(entry);
-  const keep = history.slice(0, 200);
-  await chrome.storage.local.set({ [STORAGE_KEYS.history]: keep });
+  await historyService?.prependEntry?.(entry);
   await renderHistory();
   return entry;
 }
@@ -1212,23 +1225,23 @@ async function upgradeNewChatHistoryEntry(entryId, prompt, siteIds = selectedSit
   const id = String(entryId || "");
   const rawPrompt = String(prompt || "").trim();
   if (!id || !rawPrompt) return;
-  const history = await loadHistory();
-  const idx = history.findIndex((item) => item && item.id === id);
-  if (idx < 0) return;
-  const item = history[idx];
-  if (!isNewChatHistoryPrompt(item.prompt)) return;
   const summary = await summarizeHistoryPrompt(rawPrompt);
   const validSiteIds = Array.isArray(siteIds) ? siteIds.filter((siteId) => getSiteById(siteId)) : [];
-  item.prompt = summary.text || buildHistoryPreview(rawPrompt);
-  item.aiSummary = !!summary.ai;
+  const set = {
+    prompt: summary.text || buildHistoryPreview(rawPrompt),
+    aiSummary: !!summary.ai
+  };
   if (validSiteIds.length) {
-    item.sites = validSiteIds
+    set.sites = validSiteIds
       .map(getSiteById)
       .filter(Boolean)
       .map((site) => site.name);
   }
-  history[idx] = item;
-  await chrome.storage.local.set({ [STORAGE_KEYS.history]: history.slice(0, 200) });
+  const updated = await historyService?.updateEntryById?.(id, {
+    ifPromptIn: [I18N.zh.new_chat_history, I18N.en.new_chat_history],
+    set
+  });
+  if (!updated) return;
   if (!historyPanelEl.classList.contains("hidden")) {
     await renderHistory();
   }
@@ -1236,25 +1249,133 @@ async function upgradeNewChatHistoryEntry(entryId, prompt, siteIds = selectedSit
 
 async function patchHistoryUrl(entryId, siteId, url) {
   if (!entryId || !siteId || !/^https?:\/\//i.test(url)) return;
-  const history = await loadHistory();
-  const idx = history.findIndex((item) => item && item.id === entryId);
-  if (idx < 0) return;
-  const item = history[idx];
-  const urls = item.urls && typeof item.urls === "object" ? { ...item.urls } : {};
-  if (normalizeUrlForCompare(urls[siteId] || "") === normalizeUrlForCompare(url)) return;
-  urls[siteId] = url;
-  item.urls = urls;
-  history[idx] = item;
-  await chrome.storage.local.set({ [STORAGE_KEYS.history]: history.slice(0, 200) });
+  const changed = await historyService?.patchHistoryUrl?.(entryId, siteId, url);
+  if (!changed) return;
   if (!historyPanelEl.classList.contains("hidden")) {
     await renderHistory();
   }
 }
 
+function normalizeMessageOrigin(origin) {
+  return String(origin || "").replace(/\/$/, "");
+}
+
+function hostFromUrl(url) {
+  try {
+    return new URL(String(url || "")).hostname.toLowerCase();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function hostFromOrigin(origin) {
+  try {
+    return new URL(String(origin || "")).hostname.toLowerCase();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function hostMatchesKnownPattern(host, pattern) {
+  const cleanHost = String(host || "").toLowerCase();
+  const cleanPattern = String(pattern || "").toLowerCase();
+  return cleanHost === cleanPattern || cleanHost.endsWith(`.${cleanPattern}`);
+}
+
+function providerHostsForHost(host) {
+  const matches = [];
+  for (const hosts of Object.values(BUILTIN_SITE_HOSTS)) {
+    if (hosts.some((pattern) => hostMatchesKnownPattern(host, pattern))) {
+      matches.push(...hosts);
+    }
+  }
+  return matches;
+}
+
+function allowedHostsForFrameSite(siteId, frame) {
+  const hosts = new Set();
+  const site = getSiteById(siteId);
+  [site?.url, siteUrlState[siteId], frame?.src].forEach((url) => {
+    const host = hostFromUrl(url);
+    if (!host) return;
+    hosts.add(host);
+    providerHostsForHost(host).forEach((alias) => hosts.add(alias));
+  });
+  (BUILTIN_SITE_HOSTS[siteId] || []).forEach((host) => hosts.add(host));
+  return hosts;
+}
+
+function originForSiteId(siteId) {
+  const site = getSiteById(siteId);
+  return originFromUrl(siteUrlState[siteId]) || originFromUrl(site?.url || "");
+}
+
+function targetOriginForFrame(frame) {
+  const siteId = String(frame?.dataset?.siteId || "");
+  const learnedOrigin = learnedIframeOriginBySiteId.get(siteId);
+  if (learnedOrigin) return learnedOrigin;
+  return originFromUrl(frame?.src || "") || originForSiteId(siteId);
+}
+
+function postRuntimeMessageToFrame(frame, type, message, payload = {}) {
+  const targetOrigin = targetOriginForFrame(frame);
+  if (!targetOrigin || !frame?.contentWindow) return false;
+  const siteId = String(frame.dataset.siteId || "");
+  frame.contentWindow.postMessage(
+    {
+      type,
+      message,
+      payload,
+      config: {
+        siteId,
+        siteUrl: getSiteById(siteId)?.url || ""
+      }
+    },
+    targetOrigin
+  );
+  return true;
+}
+
+function trustedIframeMessageContext(event) {
+  const frames = Array.from(document.querySelectorAll("iframe"));
+  const frame = frames.find((candidate) => candidate.contentWindow === event.source);
+  if (!frame) return null;
+  const eventOrigin = normalizeMessageOrigin(event.origin);
+  if (!eventOrigin || eventOrigin === "null") return null;
+  const siteId = String(frame.dataset.siteId || "");
+  const learnedOrigin = learnedIframeOriginBySiteId.get(siteId);
+  if (learnedOrigin && normalizeMessageOrigin(learnedOrigin) === eventOrigin) {
+    return { frame, siteId, origin: eventOrigin };
+  }
+  const allowedOrigins = new Set(
+    [originFromUrl(frame.src || ""), originForSiteId(siteId)].filter(Boolean).map(normalizeMessageOrigin)
+  );
+  const eventHost = hostFromOrigin(eventOrigin);
+  const allowedHosts = allowedHostsForFrameSite(siteId, frame);
+  const allowedByHost = eventHost && Array.from(allowedHosts).some((host) => hostMatchesKnownPattern(eventHost, host));
+  if (!allowedOrigins.has(eventOrigin) && !allowedByHost) return null;
+  learnedIframeOriginBySiteId.set(siteId, eventOrigin);
+  return { frame, siteId, origin: eventOrigin };
+}
+
+function trustedInboundFrameSiteId(payloadSiteId, frameContext, allowedSiteIds = null) {
+  const cleanPayloadSiteId = String(payloadSiteId || "").trim();
+  const frameSiteId = String(frameContext?.siteId || "").trim();
+  if (
+    cleanPayloadSiteId &&
+    cleanPayloadSiteId !== "generic" &&
+    (!frameSiteId || cleanPayloadSiteId === frameSiteId) &&
+    (!allowedSiteIds || allowedSiteIds.has(cleanPayloadSiteId))
+  ) {
+    return cleanPayloadSiteId;
+  }
+  return frameSiteId;
+}
+
 function sendToFrames(type, message, payload = {}) {
   const frames = Array.from(document.querySelectorAll("iframe"));
   frames.forEach((frame) => {
-    frame.contentWindow.postMessage({ type, message, payload, config: { siteId: frame.dataset.siteId } }, "*");
+    postRuntimeMessageToFrame(frame, type, message, payload);
   });
 }
 
@@ -1263,18 +1384,24 @@ function sendToTargetFrames(type, message, targetSiteIds, payload = {}) {
   const frames = Array.from(document.querySelectorAll("iframe"));
   frames.forEach((frame) => {
     if (!targetSet.has(frame.dataset.siteId)) return;
-    frame.contentWindow.postMessage({ type, message, payload, config: { siteId: frame.dataset.siteId } }, "*");
+    postRuntimeMessageToFrame(frame, type, message, payload);
   });
 }
 
 function normalizeCollectedResponseText(text) {
-  return String(text || "")
+  return textFormat?.normalizeCollectedResponseText?.(text) || String(text || "")
     .replaceAll(/\r\n?/g, "\n")
     .replaceAll(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function buildCombinedLatestPrompt(sections, existingPrompt = "") {
+  if (textFormat?.buildCombinedLatestPrompt) {
+    return textFormat.buildCombinedLatestPrompt(sections, existingPrompt, {
+      unavailableText: t("combine_latest_unavailable"),
+      footerText: t("combine_latest_prompt_hint")
+    });
+  }
   const body = sections
     .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || t("combine_latest_unavailable")}`)
     .join("\n\n---------\n\n");
@@ -1297,7 +1424,9 @@ async function collectLatestResponses(siteIds) {
           return {
             siteId,
             siteName: site?.name || siteId,
-            text: responses.get(siteId) || ""
+            text: responses.get(siteId)?.text || "",
+            status: responses.get(siteId)?.status || "extraction-timeout",
+            reason: responses.get(siteId)?.reason || "timeout"
           };
         })
       );
@@ -1314,6 +1443,66 @@ async function collectLatestResponses(siteIds) {
   });
 }
 
+let legacyRuntimeSendContext = null;
+
+function makeLegacyRuntimeOutcome(status, fields = {}) {
+  const runtime = window.__ASK_AI_TOGETHER_RUNTIME__;
+  if (runtime?.makeOutcome) return runtime.makeOutcome(status, fields);
+  return {
+    ok: status === "response-found" || status === "response-empty",
+    status,
+    timestamp: Date.now(),
+    ...fields
+  };
+}
+
+function createLegacyRuntimeTransport() {
+  return {
+    sendPrompt(siteIds, message) {
+      const targetSiteIds = Array.isArray(siteIds) ? siteIds.filter((siteId) => getSiteById(siteId)) : [];
+      if (!targetSiteIds.length) return makeLegacyRuntimeOutcome("provider-not-found", { action: "sendPrompt" });
+      const context = legacyRuntimeSendContext || {};
+      const requestId = String(context.requestId || `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`);
+      const payload = { requestId };
+      if (context.broadcastAll) {
+        sendToFrames("CHAT_MESSAGE", String(message || ""), payload);
+      } else {
+        sendToTargetFrames("CHAT_MESSAGE", String(message || ""), targetSiteIds, payload);
+      }
+      return makeLegacyRuntimeOutcome("response-found", {
+        action: "sendPrompt",
+        requestId,
+        siteIds: targetSiteIds
+      });
+    },
+    collectLatest(siteIds) {
+      return collectLatestResponses(siteIds);
+    },
+    newChat(siteIds) {
+      const targetSiteIds = Array.isArray(siteIds) ? siteIds.filter((siteId) => getSiteById(siteId)) : [];
+      if (!targetSiteIds.length) return makeLegacyRuntimeOutcome("provider-not-found", { action: "newChat" });
+      sendToTargetFrames("NEW_CHAT", "NEW_CHAT", targetSiteIds);
+      return makeLegacyRuntimeOutcome("response-found", {
+        action: "newChat",
+        siteIds: targetSiteIds
+      });
+    },
+    getCapabilities(siteIds) {
+      const ids = Array.isArray(siteIds) ? siteIds.filter((siteId) => getSiteById(siteId)) : [];
+      return makeLegacyRuntimeOutcome("response-found", {
+        capabilities: ids.map((siteId) => ({
+          siteId,
+          supportsAttachments: true,
+          attachmentMode: "legacy-only"
+        }))
+      });
+    }
+  };
+}
+
+const legacyRuntimeTransport = createLegacyRuntimeTransport();
+window.__ASK_AI_TOGETHER_RUNTIME__?.registerTransport?.("legacy", legacyRuntimeTransport);
+
 async function combineLatestResponsesIntoPrompt() {
   const targetSiteIds = mentionSiteIds.length ? [...mentionSiteIds] : [...selectedSiteIds];
   if (!targetSiteIds.length) return;
@@ -1325,7 +1514,7 @@ async function combineLatestResponsesIntoPrompt() {
   }
 
   try {
-    const sections = await collectLatestResponses(targetSiteIds);
+    const sections = await legacyRuntimeTransport.collectLatest(targetSiteIds);
     promptEl.value = buildCombinedLatestPrompt(sections, promptEl.value);
     promptEl.focus();
     const cursor = promptEl.value.length;
@@ -1615,11 +1804,11 @@ async function onSend() {
   startSendingFeedback(targetSiteIds, requestId);
   await flushUiFrame();
 
-  const payload = { requestId };
-  if (mentionSiteIds.length) {
-    sendToTargetFrames("CHAT_MESSAGE", message, targetSiteIds, payload);
-  } else {
-    sendToFrames("CHAT_MESSAGE", message, payload);
+  legacyRuntimeSendContext = { requestId, broadcastAll: !mentionSiteIds.length };
+  try {
+    legacyRuntimeTransport.sendPrompt(targetSiteIds, message);
+  } finally {
+    legacyRuntimeSendContext = null;
   }
 
   const currentUrls = urlsForSelectedSites(targetSiteIds);
@@ -1869,7 +2058,7 @@ function bindEvents() {
     activeSiteIds.forEach((siteId) => {
       delete pendingHistoryBySite[siteId];
     });
-    sendToFrames("NEW_CHAT", "NEW_CHAT");
+    legacyRuntimeTransport.newChat(activeSiteIds);
   });
 
   promptEl.addEventListener("keydown", (e) => {
@@ -2066,7 +2255,7 @@ function bindEvents() {
 
   document.getElementById("history-close").addEventListener("click", closePanels);
   document.getElementById("history-clear").addEventListener("click", async () => {
-    await chrome.storage.local.set({ [STORAGE_KEYS.history]: [] });
+    await historyService?.saveHistory?.([]);
     await renderHistory();
   });
 
@@ -2121,6 +2310,8 @@ function bindEvents() {
 
   window.addEventListener("message", (event) => {
     if (!event.data || !event.data.type) return;
+    const frameContext = trustedIframeMessageContext(event);
+    if (!frameContext) return;
     if (event.data.type === "PANE_EXIT_FOCUS") {
       if (focusedSiteId) exitPaneFocus();
       return;
@@ -2133,21 +2324,29 @@ function bindEvents() {
     if (event.data.type === "LAST_RESPONSE") {
       const payload = event.data.payload || {};
       const requestId = String(payload.requestId || "");
-      const siteId = String(payload.siteId || "");
-      if (!requestId || !siteId) return;
+      const payloadSiteId = String(payload.siteId || "");
       const pending = pendingLatestResponseRequests.get(requestId);
+      const siteId = trustedInboundFrameSiteId(payloadSiteId, frameContext, pending?.siteIds || null);
+      if (!requestId || !siteId) return;
       if (!pending || !pending.siteIds.has(siteId)) return;
-      pending.responses.set(siteId, normalizeCollectedResponseText(payload.text || ""));
+      pending.responses.set(siteId, {
+        text: normalizeCollectedResponseText(payload.text || ""),
+        status: String(payload.status || (payload.text ? "response-found" : "response-empty")),
+        reason: String(payload.reason || payload.error || "")
+      });
       if (pending.responses.size < pending.siteIds.size) return;
       window.clearTimeout(pending.timeoutId);
       pendingLatestResponseRequests.delete(requestId);
       pending.resolve(
         Array.from(pending.siteIds).map((id) => {
+          const response = pending.responses.get(id) || {};
           const site = getSiteById(id);
           return {
             siteId: id,
             siteName: site?.name || id,
-            text: pending.responses.get(id) || ""
+            text: response.text || "",
+            status: response.status || "response-empty",
+            reason: response.reason || ""
           };
         })
       );
@@ -2159,21 +2358,27 @@ function bindEvents() {
     }
     if (event.data.type !== "UPDATE_HISTORY") return;
     const payload = event.data.payload || {};
-    if (payload.siteId && payload.url) {
-      siteUrlState[payload.siteId] = payload.url;
+    const siteId = trustedInboundFrameSiteId(payload.siteId, frameContext);
+    if (siteId && payload.url) {
+      siteUrlState[siteId] = payload.url;
       void saveSiteUrlState();
-      const pendingPatch = pendingHistoryBySite[payload.siteId];
+      const pendingPatch = pendingHistoryBySite[siteId];
       if (pendingPatch && typeof pendingPatch === "object") {
         const expired = Number(pendingPatch.expireAt || 0) < Date.now();
         const baseline = String(pendingPatch.baselineUrl || "");
         if (expired) {
-          delete pendingHistoryBySite[payload.siteId];
+          delete pendingHistoryBySite[siteId];
         } else if (isHttpUrl(payload.url) && payload.url !== baseline) {
-          delete pendingHistoryBySite[payload.siteId];
-          void patchHistoryUrl(String(pendingPatch.entryId || ""), payload.siteId, payload.url);
+          delete pendingHistoryBySite[siteId];
+          void patchHistoryUrl(String(pendingPatch.entryId || ""), siteId, payload.url);
         }
       }
     }
+  });
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || msg.type !== "OA_SEND_PROGRESS" || !msg.payload) return;
+    updateSendingFeedbackProgress(msg.payload || {});
   });
 
   initDraggableBubble("input-bubble");

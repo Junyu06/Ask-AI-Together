@@ -141,32 +141,28 @@ function tileRects(n, work, preset) {
   return tileRectsAuto(nClamped, work);
 }
 
-async function ensureWindowForSite(siteId, url, targets, focusLast = false) {
+async function ensureWindowForSite(siteId, url, targets, focusLast = false, origin) {
   const u = String(url || "").trim() || BUILTIN_SITE_URLS[siteId];
   if (!u) throw new Error("missing-url");
 
   const existing = targets[siteId];
-  if (existing?.windowId) {
-    try {
-      const w = await chrome.windows.get(existing.windowId, { populate: true });
-      const tabId = w.tabs?.[0]?.id;
-      if (tabId != null) {
-        targets[siteId] = { siteId, windowId: w.id, tabId, transport: "window" };
-        if (focusLast) {
-          try {
-            await chrome.windows.update(w.id, { focused: true });
-          } catch (_e) {
-            /* ignore */
-          }
+  if (existing) {
+    const validTab = await getValidTargetTab(existing, siteId, u);
+    if (validTab) {
+      targets[siteId] = { siteId, windowId: validTab.windowId, tabId: validTab.id, transport: "window" };
+      if (focusLast) {
+        try {
+          await chrome.windows.update(validTab.windowId, { focused: true });
+        } catch (_e) {
+          /* ignore */
         }
-        return targets[siteId];
       }
-    } catch (_e) {
-      delete targets[siteId];
+      return targets[siteId];
     }
+    delete targets[siteId];
   }
 
-  const found = await findTabForAiSite(siteId, u);
+  const found = await findTabForAiSite(siteId, u, origin);
   if (found?.windowId != null && found.id != null) {
     targets[siteId] = { siteId, windowId: found.windowId, tabId: found.id, transport: "window" };
     if (focusLast) {
@@ -201,11 +197,16 @@ async function openOrReuseWindows(sites, options) {
   const targets = await loadTargets();
   const list = Array.isArray(sites) ? sites : [];
   const entries = list.filter((e) => String(e?.siteId || ""));
+  const origin = options?.origin;
+  if (entries.length) {
+    await syncTargetsFromTabsForSites(entries, origin, options?.targetHints);
+    Object.assign(targets, await loadTargets());
+  }
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const siteId = String(entry?.siteId || "");
     const url = String(entry?.url || "").trim() || BUILTIN_SITE_URLS[siteId];
-    await ensureWindowForSite(siteId, url, targets, false);
+    await ensureWindowForSite(siteId, url, targets, false, origin);
   }
   await saveTargets(targets);
   if (!options?.skipFocusChain) {
@@ -222,8 +223,8 @@ function siteEntriesFromMessage(msg) {
   return siteIds.map((id) => ({ siteId: id, url: BUILTIN_SITE_URLS[id] || "" }));
 }
 
-async function applyTile(siteEntries, workArea, layoutPreset) {
-  await syncTargetsFromTabsForSites(siteEntries);
+async function applyTile(siteEntries, workArea, layoutPreset, origin, targetHints) {
+  await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
   const siteIds = siteEntries.map((e) => e.siteId);
   await ensureSeparateWindowsForTargets(siteIds);
   const targets = await loadTargets();

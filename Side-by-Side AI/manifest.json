@@ -6,6 +6,7 @@
   "permissions": [
     "storage",
     "declarativeNetRequest",
+    "scripting",
     "tabs",
     "windows",
     "system.display"
@@ -15,8 +16,10 @@
     "https://chat.openai.com/*",
     "https://chat.deepseek.com/*",
     "https://www.kimi.com/*",
+    "https://kimi.com/*",
     "https://chat.qwen.ai/*",
     "https://www.doubao.com/*",
+    "https://doubao.com/*",
     "https://yuanbao.tencent.com/*",
     "https://grok.com/*",
     "https://claude.ai/*",
@@ -48,23 +51,17 @@
         "<all_urls>"
       ],
       "js": [
-        "legacy/content.js"
-      ],
-      "all_frames": true,
-      "run_at": "document_idle",
-      "match_about_blank": true
-    },
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
+        "shared/runtime-contract.js",
+        "shared/provider-catalog.js",
+        "shared/quote-helper.js",
         "content/content-sites.js",
         "content/content-dom.js",
         "content/content-response.js",
         "content/content-input.js",
         "content/content-attachments.js",
         "content/content-send-runtime.js",
+        "content/content-shared-runtime.js",
+        "legacy/content.js",
         "content/content-quote-ui.js"
       ],
       "all_frames": true,
@@ -105,6 +102,11 @@
         "assets/quick-focus.js",
         "assets/options-i18n.js",
         "assets/options-settings.js",
+        "shared/provider-catalog.js",
+        "shared/runtime-contract.js",
+        "shared/quote-helper.js",
+        "shared/text-format.js",
+        "shared/history-service.js",
         "ui/controller/controller.css",
         "legacy/index.html",
         "legacy/app.js",

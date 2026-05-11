@@ -1,30 +1,8 @@
 "use strict";
 
-const QF_SITE_LABELS = {
-  chatgpt: "ChatGPT",
-  deepseek: "DeepSeek",
-  kimi: "Kimi",
-  qwen: "Qwen",
-  doubao: "Doubao",
-  yuanbao: "Yuanbao",
-  grok: "Grok",
-  claude: "Claude",
-  gemini: "Gemini",
-  perplexity: "Perplexity"
-};
-
-const QF_BUILTIN_SITES = [
-  { id: "chatgpt", url: "https://chatgpt.com/" },
-  { id: "deepseek", url: "https://chat.deepseek.com/" },
-  { id: "kimi", url: "https://www.kimi.com/" },
-  { id: "qwen", url: "https://chat.qwen.ai/" },
-  { id: "doubao", url: "https://www.doubao.com/" },
-  { id: "yuanbao", url: "https://yuanbao.tencent.com/" },
-  { id: "grok", url: "https://grok.com/" },
-  { id: "claude", url: "https://claude.ai/" },
-  { id: "gemini", url: "https://gemini.google.com/" },
-  { id: "perplexity", url: "https://www.perplexity.ai/" }
-];
+const QF_PROVIDER_CATALOG = window.AskAiTogetherProviderCatalog;
+const QF_SITE_LABELS = QF_PROVIDER_CATALOG?.getDisplayNameMap?.() || {};
+const QF_BUILTIN_SITES = QF_PROVIDER_CATALOG?.getBuiltInSiteEntries?.() || [];
 
 function qfEscapeHtml(str) {
   return String(str)
@@ -40,6 +18,106 @@ function qfT(key, vars = {}) {
   if (i18n?.format) return i18n.format(key, vars);
   return key;
 }
+
+async function getOptionsPageOriginPayload() {
+  if (typeof chrome === "undefined" || !chrome.tabs?.getCurrent) return null;
+  try {
+    const tab = await chrome.tabs.getCurrent();
+    if (!tab) return null;
+    return {
+      windowId: Number.isInteger(tab.windowId) ? tab.windowId : null,
+      tabId: Number.isInteger(tab.id) ? tab.id : null,
+      groupId: Number.isInteger(tab.groupId) ? tab.groupId : null,
+      index: Number.isInteger(tab.index) ? tab.index : null
+    };
+  } catch (_e) {
+    return null;
+  }
+}
+
+window.getOptionsPageOriginPayload = getOptionsPageOriginPayload;
+
+function qfNormalizeHost(hostname, ignoreWww = true) {
+  const clean = String(hostname || "").toLowerCase();
+  return ignoreWww ? clean.replace(/^www\./, "") : clean;
+}
+
+function qfHostMatches(hostname, needles, options = {}) {
+  const builtIn = options.builtIn !== false;
+  const host = qfNormalizeHost(hostname, builtIn);
+  return needles.some((needle) => {
+    const normalized = qfNormalizeHost(needle, builtIn);
+    return host === normalized || (builtIn && host.endsWith("." + normalized));
+  });
+}
+
+function qfHostNeedlesForSite(site) {
+  const siteId = String(site?.siteId || site?.id || "");
+  const builtIn = QF_PROVIDER_CATALOG?.getHostMap?.()?.[siteId];
+  if (Array.isArray(builtIn) && builtIn.length) return { needles: builtIn, builtIn: true };
+  try {
+    return { needles: [new URL(String(site?.url || "")).hostname], builtIn: false };
+  } catch (_e) {
+    return { needles: [], builtIn: false };
+  }
+}
+
+function qfTabMatchesSite(tab, site) {
+  const raw = String(tab?.url || "");
+  if (!/^https?:/i.test(raw)) return false;
+  let host = "";
+  try {
+    host = new URL(raw).hostname;
+  } catch (_e) {
+    return false;
+  }
+  const { needles, builtIn } = qfHostNeedlesForSite(site);
+  return needles.length > 0 && qfHostMatches(host, needles, { builtIn });
+}
+
+function qfTabAffinityScore(tab, originTab) {
+  if (!originTab || typeof originTab !== "object") return tab?.active ? 10 : 0;
+  let score = tab?.active ? 10 : 0;
+  if (Number.isInteger(originTab.windowId) && tab?.windowId === originTab.windowId) score += 100;
+  if (Number.isInteger(originTab.groupId) && originTab.groupId >= 0 && tab?.groupId === originTab.groupId) score += 200;
+  if (Number.isInteger(originTab.index) && Number.isInteger(tab?.index) && tab?.windowId === originTab.windowId) {
+    score += Math.max(0, 20 - Math.abs(tab.index - originTab.index));
+  }
+  return score;
+}
+
+async function getOptionsPageTargetHints(sites) {
+  if (typeof chrome === "undefined" || !chrome.tabs?.getCurrent || !chrome.tabs?.query) return [];
+  const list = Array.isArray(sites) ? sites : [];
+  if (!list.length) return [];
+  let originTab = null;
+  try {
+    originTab = await chrome.tabs.getCurrent();
+  } catch (_e) {
+    originTab = null;
+  }
+  if (!Number.isInteger(originTab?.windowId)) return [];
+  let openTabs = [];
+  try {
+    openTabs = await chrome.tabs.query({ windowId: originTab.windowId });
+  } catch (_e) {
+    return [];
+  }
+  return list
+    .map((site) => {
+      const siteId = String(site?.siteId || "");
+      if (!siteId) return null;
+      const matches = openTabs.filter((tab) => qfTabMatchesSite(tab, site));
+      if (!matches.length) return null;
+      matches.sort((a, b) => qfTabAffinityScore(b, originTab) - qfTabAffinityScore(a, originTab));
+      const tab = matches[0];
+      if (!Number.isInteger(tab?.id) || !Number.isInteger(tab?.windowId)) return null;
+      return { siteId, tabId: tab.id, windowId: tab.windowId };
+    })
+    .filter(Boolean);
+}
+
+window.getOptionsPageTargetHints = getOptionsPageTargetHints;
 
 /**
  * 与控制器页一致：按「设置里的站点顺序」返回当前勾选站点的 { siteId, url }。
