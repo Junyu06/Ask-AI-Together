@@ -4,12 +4,17 @@ const STORAGE_HISTORY = "oa_history";
 const STORAGE_THEME_MODE = "oa_theme_mode";
 const STORAGE_LOCALE_MODE = "oa_locale_mode";
 const STORAGE_LAUNCH_MODE = "oa_mode";
+const STORAGE_COMBINE_FOLLOWUP_ENABLED = "oa_combine_followup_enabled";
+const STORAGE_COMBINE_FOLLOWUP_TEXT = "oa_combine_followup_text";
 const OPTIONS_EMBED_MODE = new URLSearchParams(location.search).get("embed") === "1";
 
 /** @type {boolean} */
 let promptIsComposing = false;
 let pendingPanelCloseTimer = 0;
 let sendStatusTimer = 0;
+let combineFollowupEnabled = false;
+let combineFollowupText = "";
+let combineFollowupStatusTimer = 0;
 const textFormat = window.AskAiTogetherTextFormat;
 const historyService = window.AskAiTogetherHistoryService;
 let embeddedCurrentSite = null;
@@ -182,6 +187,60 @@ function setSendStatus(text) {
   }
 }
 
+function setCombineFollowupStatus(text) {
+  const el = document.getElementById("combine-followup-status");
+  if (!el) return;
+  if (combineFollowupStatusTimer) {
+    window.clearTimeout(combineFollowupStatusTimer);
+    combineFollowupStatusTimer = 0;
+  }
+  el.textContent = text || "";
+  el.classList.toggle("hidden", !text);
+  if (text) {
+    combineFollowupStatusTimer = window.setTimeout(() => {
+      if (el.textContent !== text) return;
+      el.textContent = "";
+      el.classList.add("hidden");
+      combineFollowupStatusTimer = 0;
+    }, 3000);
+  }
+}
+
+async function loadCombineFollowupConfig() {
+  const data = await chrome.storage.local.get([
+    STORAGE_COMBINE_FOLLOWUP_ENABLED,
+    STORAGE_COMBINE_FOLLOWUP_TEXT
+  ]);
+  combineFollowupEnabled = !!data[STORAGE_COMBINE_FOLLOWUP_ENABLED];
+  combineFollowupText = String(data[STORAGE_COMBINE_FOLLOWUP_TEXT] || "").trim();
+}
+
+function syncCombineFollowupControls(clearStatus = true) {
+  const enabledEl = document.getElementById("combine-followup-enabled");
+  const textEl = document.getElementById("combine-followup-text");
+  if (enabledEl) enabledEl.checked = combineFollowupEnabled;
+  if (textEl) textEl.value = combineFollowupText;
+  if (clearStatus) setCombineFollowupStatus("");
+}
+
+async function saveCombineFollowupConfig() {
+  const enabledEl = document.getElementById("combine-followup-enabled");
+  const textEl = document.getElementById("combine-followup-text");
+  combineFollowupEnabled = !!enabledEl?.checked;
+  combineFollowupText = String(textEl?.value || "").trim();
+  await chrome.storage.local.set({
+    [STORAGE_COMBINE_FOLLOWUP_ENABLED]: combineFollowupEnabled,
+    [STORAGE_COMBINE_FOLLOWUP_TEXT]: combineFollowupText
+  });
+  syncCombineFollowupControls();
+  setCombineFollowupStatus(t("combine_template_saved"));
+}
+
+function combineFollowupFooterText(existingPrompt = "") {
+  if (String(existingPrompt || "").trim()) return "";
+  return String(combineFollowupText || "").trim();
+}
+
 function formatRuntimeFailureReason(res, fallback = "unknown") {
   if (!res || typeof res !== "object") return fallback;
   if (Array.isArray(res.outcomes)) {
@@ -240,17 +299,19 @@ function normalizeCollectedResponseText(text) {
 }
 
 function buildCombinedLatestPrompt(sections, existingPrompt = "") {
+  const footerText = combineFollowupFooterText(existingPrompt);
   if (textFormat?.buildCombinedLatestPrompt) {
     return textFormat.buildCombinedLatestPrompt(sections, existingPrompt, {
       unavailableText: t("combine_unavailable"),
-      footerText: t("combine_footer")
+      footerText
     });
   }
   const body = sections
     .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || t("combine_unavailable")}`)
     .join("\n\n---------\n\n");
-  const footer = String(existingPrompt || "").trim() || t("combine_footer");
-  return `${body}\n\n---------\n\n${footer}`.trim();
+  const footer = String(existingPrompt || "").trim() || footerText;
+  if (!body) return footer;
+  return `${body}\n\n---------\n\n${footer}`;
 }
 
 function buildSiteEntriesFromHistoryUrls(urls) {
@@ -611,6 +672,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   await syncThemeControls();
   await syncLocaleControls();
   await syncModeControls();
+  await loadCombineFollowupConfig();
+  syncCombineFollowupControls();
   await renderHistoryPanel();
 
   const embedMode = OPTIONS_EMBED_MODE;
@@ -704,10 +767,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  document.getElementById("combine-followup-enabled")?.addEventListener("change", () => {
+    void saveCombineFollowupConfig();
+  });
+  document.getElementById("combine-followup-text")?.addEventListener("input", () => setCombineFollowupStatus(""));
+  document.getElementById("save-combine-followup")?.addEventListener("click", () => {
+    void saveCombineFollowupConfig();
+  });
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[STORAGE_HISTORY]) void renderHistoryPanel();
     if (changes[STORAGE_THEME_MODE]) void applyOptionsTheme();
+    if (changes[STORAGE_COMBINE_FOLLOWUP_ENABLED] || changes[STORAGE_COMBINE_FOLLOWUP_TEXT]) {
+      void loadCombineFollowupConfig().then(() => syncCombineFollowupControls(false));
+    }
   });
 
   const promptEl = document.getElementById("prompt");

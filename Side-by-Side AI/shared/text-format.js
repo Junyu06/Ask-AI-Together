@@ -57,7 +57,7 @@
     }).join(separator);
     var footer = String(existingPrompt || "").trim() || String(opts.footerText || "").trim();
     if (!list.length) return footer;
-    return (body + separator + footer).trim();
+    return body + separator + footer;
   }
 
   global.AskAiTogetherTextFormat = {

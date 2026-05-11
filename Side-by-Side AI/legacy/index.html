@@ -16,6 +16,10 @@
       <p id="send-status" class="send-status hidden" role="status" aria-live="polite"></p>
       <div class="input-row">
         <div class="left-actions" aria-label="工具栏" data-i18n-aria-label="toolbar_aria">
+          <button id="input-bubble-toggle" class="btn btn-icon btn-ghost" type="button" aria-label="缩小输入框" title="缩小输入框" data-i18n-aria-label="minimize_input" data-i18n-title="minimize_input">
+            <svg class="icon input-bubble-toggle-minimize" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /></svg>
+            <svg class="icon input-bubble-toggle-restore hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
+          </button>
           <button id="site-settings-btn" class="btn btn-icon btn-ghost" type="button" aria-label="设置" title="设置" data-i18n-aria-label="settings_title" data-i18n-title="settings_title">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
@@ -59,6 +63,7 @@
       <div class="panel-body">
         <nav class="settings-sidebar" aria-label="设置类别" data-i18n-aria-label="settings_categories">
           <button class="sidebar-item" data-settings-tab="mode" type="button" data-i18n="mode_tab">模式</button>
+          <button class="sidebar-item" data-settings-tab="template" type="button" data-i18n="template_tab">模板</button>
           <button class="sidebar-item active" data-settings-tab="sites" type="button" data-i18n="sites_tab">站点</button>
           <button class="sidebar-item" data-settings-tab="layout" type="button" data-i18n="layout_tab">布局</button>
           <button class="sidebar-item" data-settings-tab="appearance" type="button" data-i18n="appearance_tab">外观</button>
@@ -81,6 +86,18 @@
               </label>
             </div>
             <p class="floating-window-subtitle" data-i18n="mode_hint">先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。</p>
+          </div>
+
+          <div id="settings-tab-template" class="settings-tab" data-tab="template">
+            <p class="floating-window-subtitle" data-i18n="combine_template_subtitle">设置 Combine Latest 后自动追加的 follow-up 模板。</p>
+            <div class="custom-site-form combine-template-form">
+              <label for="combine-followup-text" class="controller-field-label" data-i18n="combine_template_label">自定义 follow-up 模板</label>
+              <textarea id="combine-followup-text" class="settings-textarea" rows="5" data-i18n-placeholder="combine_template_placeholder" placeholder="Write your request here"></textarea>
+              <div class="custom-site-actions">
+                <button id="save-combine-followup" class="btn btn-primary" type="button" data-i18n="save">保存</button>
+              </div>
+              <p id="combine-followup-status" class="history-summary-test-result hidden" role="status" aria-live="polite"></p>
+            </div>
           </div>
 
           <div id="settings-tab-sites" class="settings-tab active" data-tab="sites">

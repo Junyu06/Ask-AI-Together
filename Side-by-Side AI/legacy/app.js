@@ -10,7 +10,9 @@ const STORAGE_KEYS = {
   historySummaryUrl: "oa_history_summary_url",
   historySummaryModel: "oa_history_summary_model",
   panesPerRow: "oa_panes_per_row",
-  launchMode: "oa_mode"
+  launchMode: "oa_mode",
+  combineFollowupEnabled: "oa_combine_followup_enabled",
+  combineFollowupText: "oa_combine_followup_text"
 };
 
 const providerCatalog = window.AskAiTogetherProviderCatalog;
@@ -50,6 +52,10 @@ let historySummaryUrl = "http://127.0.0.1:11434";
 let historySummaryModel = "qwen2.5:7b-instruct";
 let panesPerRow = 0;
 let launchMode = "legacy";
+let combineFollowupEnabled = false;
+let combineFollowupText = "";
+let combineFollowupStatusTimer = 0;
+let inputBubbleCollapsed = false;
 const pendingLatestResponseRequests = new Map();
 const learnedIframeOriginBySiteId = new Map();
 let activeSendRequest = null;
@@ -59,6 +65,8 @@ const SEND_PROGRESS_TIMEOUT_MS = 15000;
 
 const panesEl = document.getElementById("panes");
 const promptEl = document.getElementById("prompt");
+const inputBubbleEl = document.getElementById("input-bubble");
+const inputBubbleToggleEl = document.getElementById("input-bubble-toggle");
 const historyListEl = document.getElementById("history-list");
 const siteCheckboxesEl = document.getElementById("site-checkboxes");
 const panelBackdropEl = document.getElementById("panel-backdrop");
@@ -76,6 +84,9 @@ const historySummaryModelEl = document.getElementById("history-summary-model");
 const historySummaryConfigEl = document.getElementById("history-summary-config");
 const testHistorySummaryBtnEl = document.getElementById("test-history-summary");
 const historySummaryTestResultEl = document.getElementById("history-summary-test-result");
+const combineFollowupEnabledEl = document.getElementById("combine-followup-enabled");
+const combineFollowupTextEl = document.getElementById("combine-followup-text");
+const combineFollowupStatusEl = document.getElementById("combine-followup-status");
 const usageShortcutExitKeyEl = document.getElementById("usage-shortcut-exit-key");
 const combineLatestBtnEl = document.getElementById("combine-latest");
 const sendBtnEl = document.getElementById("send");
@@ -92,6 +103,8 @@ const I18N = {
     combine_latest_loading: "汇总中…",
     combine_latest_prompt_hint: "请在这里写你的要求",
     combine_latest_unavailable: "[未获取到回复]",
+    minimize_input: "收起输入框",
+    restore_input: "恢复输入框",
     new_chat: "新聊天",
     selected_sites: "已选择站点",
     prompt_label: "输入问题",
@@ -104,6 +117,7 @@ const I18N = {
     close: "关闭",
     settings_categories: "设置类别",
     sites_tab: "站点",
+    template_tab: "模板",
     layout_tab: "布局",
     appearance_tab: "外观",
     about_tab: "关于",
@@ -184,7 +198,12 @@ const I18N = {
     mode_subtitle: "选择点击扩展图标时的启动模式。",
     mode_legacy: "默认模式（分屏页）",
     mode_windows: "兼容模式（多窗口平铺）",
-    mode_hint: "先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。"
+    mode_hint: "先使用默认模式；如果某个 AI 网站打不开、页面空白或不能正常使用，再切换到兼容模式。",
+    combine_template_subtitle: "保存自定义 follow-up 模板；输入框为空时，Combine Latest 会自动追加它。",
+    combine_template_enable: "输入框为空时使用默认 follow-up 模板",
+    combine_template_label: "自定义 follow-up 模板",
+    combine_template_placeholder: "请在这里写你的要求",
+    combine_template_saved: "已保存。"
   },
   en: {
     input_bubble_aria: "Input and actions",
@@ -195,6 +214,8 @@ const I18N = {
     combine_latest_loading: "Combining…",
     combine_latest_prompt_hint: "Write your request here",
     combine_latest_unavailable: "[Unavailable]",
+    minimize_input: "Collapse input",
+    restore_input: "Restore input",
     new_chat: "New Chat",
     selected_sites: "Selected Sites",
     prompt_label: "Prompt",
@@ -207,6 +228,7 @@ const I18N = {
     close: "Close",
     settings_categories: "Settings categories",
     sites_tab: "Sites",
+    template_tab: "Template",
     layout_tab: "Layout",
     appearance_tab: "Appearance",
     about_tab: "About",
@@ -287,7 +309,12 @@ const I18N = {
     mode_subtitle: "Choose the launch mode when clicking the extension icon.",
     mode_legacy: "Default mode (split page)",
     mode_windows: "Compatibility mode (multi-window)",
-    mode_hint: "Use Default mode first. Switch to Compatibility mode if an AI site does not open, stays blank, or does not work correctly."
+    mode_hint: "Use Default mode first. Switch to Compatibility mode if an AI site does not open, stays blank, or does not work correctly.",
+    combine_template_subtitle: "Save a custom follow-up template; Combine Latest appends it when the prompt is empty.",
+    combine_template_enable: "Use the default follow-up template when the prompt is empty",
+    combine_template_label: "Custom follow-up template",
+    combine_template_placeholder: "Write your request here",
+    combine_template_saved: "Saved."
   }
 };
 let locale = "en";
@@ -340,6 +367,74 @@ function setSendStatus(message = "", active = false) {
   sendStatusEl.textContent = message;
   sendStatusEl.classList.toggle("hidden", !message);
   sendStatusEl.classList.toggle("is-active", active && !!message);
+}
+
+function setCombineFollowupStatus(message = "") {
+  if (!combineFollowupStatusEl) return;
+  if (combineFollowupStatusTimer) {
+    window.clearTimeout(combineFollowupStatusTimer);
+    combineFollowupStatusTimer = 0;
+  }
+  combineFollowupStatusEl.textContent = message;
+  combineFollowupStatusEl.classList.toggle("hidden", !message);
+  combineFollowupStatusEl.classList.remove("is-success", "is-error", "is-loading");
+  if (message) {
+    combineFollowupStatusEl.classList.add("is-success");
+    combineFollowupStatusTimer = window.setTimeout(() => {
+      combineFollowupStatusEl.textContent = "";
+      combineFollowupStatusEl.classList.add("hidden");
+      combineFollowupStatusEl.classList.remove("is-success");
+      combineFollowupStatusTimer = 0;
+    }, 3000);
+  }
+}
+
+function syncInputBubbleToggleLabel() {
+  if (!inputBubbleToggleEl) return;
+  const key = inputBubbleCollapsed ? "restore_input" : "minimize_input";
+  inputBubbleToggleEl.setAttribute("data-i18n-aria-label", key);
+  inputBubbleToggleEl.setAttribute("data-i18n-title", key);
+  inputBubbleToggleEl.setAttribute("aria-label", t(key));
+  inputBubbleToggleEl.setAttribute("title", t(key));
+  inputBubbleToggleEl.setAttribute("aria-expanded", String(!inputBubbleCollapsed));
+  inputBubbleToggleEl.setAttribute("aria-pressed", String(inputBubbleCollapsed));
+  inputBubbleToggleEl.querySelector(".input-bubble-toggle-minimize")?.classList.toggle("hidden", inputBubbleCollapsed);
+  inputBubbleToggleEl.querySelector(".input-bubble-toggle-restore")?.classList.toggle("hidden", !inputBubbleCollapsed);
+}
+
+function preserveInputBubbleTogglePosition(previousToggleRect) {
+  if (!inputBubbleEl || !inputBubbleToggleEl || !previousToggleRect) return;
+
+  const nextToggleRect = inputBubbleToggleEl.getBoundingClientRect();
+  const bubbleRect = inputBubbleEl.getBoundingClientRect();
+  const nextLeft = bubbleRect.left + (previousToggleRect.left - nextToggleRect.left);
+  const nextTop = bubbleRect.top + (previousToggleRect.top - nextToggleRect.top);
+  const maxLeft = Math.max(0, window.innerWidth - bubbleRect.width);
+  const maxTop = Math.max(0, window.innerHeight - bubbleRect.height);
+  const clampedLeft = Math.max(0, Math.min(maxLeft, nextLeft));
+  const clampedTop = Math.max(0, Math.min(maxTop, nextTop));
+
+  inputBubbleEl.style.left = `${clampedLeft}px`;
+  inputBubbleEl.style.top = "auto";
+  inputBubbleEl.style.bottom = `${window.innerHeight - (clampedTop + bubbleRect.height)}px`;
+  inputBubbleEl.style.transform = "none";
+}
+
+function setInputBubbleCollapsed(collapsed) {
+  const previousToggleRect = inputBubbleToggleEl?.getBoundingClientRect();
+  inputBubbleCollapsed = !!collapsed;
+  inputBubbleEl?.classList.toggle("is-collapsed", inputBubbleCollapsed);
+  syncInputBubbleToggleLabel();
+  preserveInputBubbleTogglePosition(previousToggleRect);
+  if (inputBubbleCollapsed) {
+    hideMentionDropdown();
+    if (!rightPanelEl.classList.contains("hidden") || !historyPanelEl.classList.contains("hidden")) {
+      closePanels();
+    }
+    return;
+  }
+  promptEl.focus();
+  autoResizePrompt();
 }
 
 function sendingSiteLabel(siteIds) {
@@ -501,6 +596,7 @@ function applyI18n() {
   });
   updatePromptPlaceholder();
   renderUsageGuide();
+  syncInputBubbleToggleLabel();
 
   const localeRadio = document.querySelector(`input[name="locale-mode"][value="${localeMode}"]`);
   if (localeRadio) localeRadio.checked = true;
@@ -534,6 +630,37 @@ async function loadLaunchMode() {
 async function setLaunchMode(mode) {
   launchMode = mode;
   await chrome.storage.local.set({ [STORAGE_KEYS.launchMode]: mode });
+}
+
+async function loadCombineFollowupConfig() {
+  const data = await chrome.storage.local.get([
+    STORAGE_KEYS.combineFollowupEnabled,
+    STORAGE_KEYS.combineFollowupText
+  ]);
+  combineFollowupEnabled = !!data[STORAGE_KEYS.combineFollowupEnabled];
+  combineFollowupText = String(data[STORAGE_KEYS.combineFollowupText] || "").trim();
+}
+
+function renderCombineFollowupSettings() {
+  if (combineFollowupEnabledEl) combineFollowupEnabledEl.checked = combineFollowupEnabled;
+  if (combineFollowupTextEl) combineFollowupTextEl.value = combineFollowupText;
+  setCombineFollowupStatus("");
+}
+
+async function saveCombineFollowupConfig() {
+  combineFollowupEnabled = !!combineFollowupEnabledEl?.checked;
+  combineFollowupText = String(combineFollowupTextEl?.value || "").trim();
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.combineFollowupEnabled]: combineFollowupEnabled,
+    [STORAGE_KEYS.combineFollowupText]: combineFollowupText
+  });
+  renderCombineFollowupSettings();
+  setCombineFollowupStatus(t("combine_template_saved"));
+}
+
+function combineFollowupFooterText(existingPrompt = "") {
+  if (String(existingPrompt || "").trim()) return "";
+  return String(combineFollowupText || "").trim();
 }
 
 async function loadHistorySummaryConfig() {
@@ -1396,17 +1523,19 @@ function normalizeCollectedResponseText(text) {
 }
 
 function buildCombinedLatestPrompt(sections, existingPrompt = "") {
+  const footerText = combineFollowupFooterText(existingPrompt);
   if (textFormat?.buildCombinedLatestPrompt) {
     return textFormat.buildCombinedLatestPrompt(sections, existingPrompt, {
       unavailableText: t("combine_latest_unavailable"),
-      footerText: t("combine_latest_prompt_hint")
+      footerText
     });
   }
   const body = sections
     .map(({ siteName, text }) => `[${siteName}]\n${normalizeCollectedResponseText(text) || t("combine_latest_unavailable")}`)
     .join("\n\n---------\n\n");
-  const footer = String(existingPrompt || "").trim() || t("combine_latest_prompt_hint");
-  return `${body}\n\n---------\n\n${footer}`.trim();
+  const footer = String(existingPrompt || "").trim() || footerText;
+  if (!body) return footer;
+  return `${body}\n\n---------\n\n${footer}`;
 }
 
 async function collectLatestResponses(siteIds) {
@@ -2166,6 +2295,9 @@ function bindEvents() {
   document.getElementById("site-settings-btn").addEventListener("click", () => {
     openSettingsPanel("sites");
   });
+  inputBubbleToggleEl?.addEventListener("click", () => {
+    setInputBubbleCollapsed(!inputBubbleCollapsed);
+  });
   document.getElementById("panel-close").addEventListener("click", closePanels);
   panelBackdropEl.addEventListener("click", closePanels);
 
@@ -2281,6 +2413,14 @@ function bindEvents() {
     radio.addEventListener("change", () => {
       void setLaunchMode(radio.value);
     });
+  });
+
+  combineFollowupEnabledEl?.addEventListener("change", () => {
+    void saveCombineFollowupConfig();
+  });
+  combineFollowupTextEl?.addEventListener("input", () => setCombineFollowupStatus(""));
+  document.getElementById("save-combine-followup")?.addEventListener("click", () => {
+    void saveCombineFollowupConfig();
   });
 
   historySummaryEnabledEl?.addEventListener("change", () => {
@@ -2445,6 +2585,7 @@ async function init() {
   await loadHistorySummaryConfig();
   await loadPanesPerRow();
   await loadLaunchMode();
+  await loadCombineFollowupConfig();
   applyI18n();
   normalizeOrderAndSelection();
   await saveSiteOrder();
@@ -2452,6 +2593,7 @@ async function init() {
   renderPanes();
   renderSiteSettings();
   renderHistorySummarySettings();
+  renderCombineFollowupSettings();
   await renderHistory();
   applyTheme();
   autoResizePrompt();

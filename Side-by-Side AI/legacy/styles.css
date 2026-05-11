@@ -300,6 +300,30 @@ body {
   gap: 8px;
 }
 
+.bubble-input.is-collapsed {
+  width: auto;
+}
+
+.bubble-input.is-collapsed .input-row {
+  grid-template-columns: auto;
+  gap: 0;
+  min-height: 56px;
+  padding: 8px;
+  border-radius: 999px;
+}
+
+.bubble-input.is-collapsed #send-status,
+.bubble-input.is-collapsed .prompt-wrap,
+.bubble-input.is-collapsed .btn-send,
+.bubble-input.is-collapsed .left-actions > :not(#input-bubble-toggle) {
+  display: none;
+}
+
+.bubble-input.is-collapsed .left-actions {
+  display: inline-flex;
+  gap: 0;
+}
+
 .btn-summary {
   position: relative;
   background:
@@ -721,6 +745,14 @@ body.pane-focus-mode .bubble {
   z-index: 170;
 }
 
+body.pane-focus-mode .bubble-input.is-collapsed .left-actions {
+  display: inline-flex;
+}
+
+body.pane-focus-mode .bubble-input.is-collapsed .input-row {
+  grid-template-columns: auto;
+}
+
 :root[data-theme="dark"] .panel-backdrop {
   background: rgba(0, 0, 0, 0.42);
 }
@@ -1034,13 +1066,28 @@ body.pane-focus-mode .bubble {
   gap: 8px;
 }
 
-.custom-site-form input {
+.custom-site-form input,
+.settings-textarea {
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   padding: 0 10px;
+}
+
+.settings-textarea {
+  min-height: 120px;
+  padding: 10px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.combine-template-form .controller-field-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .custom-site-actions {
