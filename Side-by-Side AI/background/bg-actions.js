@@ -623,6 +623,154 @@ async function collectLastFromTargets(siteIds, siteEntries, origin, targetHints)
 
 /** 串行执行，避免多路并发时各窗口 chrome.windows.update 抢焦点导致死循环/卡死 */
 let __oaNewChatChain = Promise.resolve();
+const NEW_CHAT_NAVIGATION_TIMEOUT_MS = 12000;
+
+function normalizeNavigationUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    let path = url.pathname || "/";
+    if (path.length > 1) path = path.replace(/\/+$/, "");
+    return `${url.origin}${path}`;
+  } catch (_error) {
+    return String(value || "").trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
+  }
+}
+
+function urlsMatchForNewChat(currentUrl, targetUrl) {
+  const current = normalizeNavigationUrl(currentUrl);
+  const target = normalizeNavigationUrl(targetUrl);
+  return Boolean(current && target && current === target);
+}
+
+function tabLooksReadyForNewChat(tab, targetUrl) {
+  if (!tab?.url) return false;
+  if (tab.status !== "complete") return false;
+  return urlsMatchForNewChat(tab.url, targetUrl);
+}
+
+function waitForNewChatNavigation(tabId, siteId, targetUrl) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = 0;
+    let listener = null;
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (listener && chrome.tabs.onUpdated?.removeListener) {
+        try {
+          chrome.tabs.onUpdated.removeListener(listener);
+        } catch (_error) {
+          /* ignore */
+        }
+      }
+      resolve(result);
+    };
+
+    const inspect = (tab) => {
+      if (tabLooksReadyForNewChat(tab, targetUrl)) {
+        finish({ ok: true, tab });
+        return true;
+      }
+      return false;
+    };
+
+    const inspectCurrent = async () => {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        inspect(tab);
+      } catch (_error) {
+        /* keep waiting until timeout */
+      }
+    };
+
+    listener = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId !== tabId || settled) return;
+      const candidate = {
+        ...(tab || {}),
+        url: changeInfo?.url || tab?.url,
+        status: changeInfo?.status || tab?.status
+      };
+      if (inspect(candidate)) return;
+      if (changeInfo?.status === "complete" || changeInfo?.url) {
+        void inspectCurrent();
+      }
+    };
+
+    timeoutId = setTimeout(() => finish({
+      ok: false,
+      status: "navigation-timeout",
+      reason: "new-chat-navigation-timeout"
+    }), NEW_CHAT_NAVIGATION_TIMEOUT_MS);
+
+    if (chrome.tabs.onUpdated?.addListener) {
+      chrome.tabs.onUpdated.addListener(listener);
+    }
+    void inspectCurrent();
+  });
+}
+
+async function navigateTargetToNewChat(siteId, rec, siteEntries) {
+  const targetUrl = String(BUILTIN_SITE_NEW_CHAT_URLS[siteId] || BUILTIN_SITE_URLS[siteId] || siteUrlForAction(siteId, siteEntries)).trim();
+  if (!targetUrl) {
+    return makeBackgroundRuntimeOutcome("transport-failed", {
+      ok: false,
+      action: "newChat",
+      providerId: siteId,
+      siteId,
+      reason: "missing-new-chat-url"
+    });
+  }
+
+  try {
+    const currentTab = await chrome.tabs.get(rec.tabId);
+    if (urlsMatchForNewChat(currentTab?.url, targetUrl)) {
+      await chrome.tabs.reload(rec.tabId);
+    } else {
+      await chrome.tabs.update(rec.tabId, { url: targetUrl });
+    }
+  } catch (error) {
+    return makeBackgroundRuntimeOutcome("transport-failed", {
+      ok: false,
+      action: "newChat",
+      providerId: siteId,
+      siteId,
+      reason: "navigation-failed",
+      error: String(error?.message || error || "")
+    });
+  }
+
+  const navigation = await waitForNewChatNavigation(rec.tabId, siteId, targetUrl);
+  if (navigation?.ok !== true) {
+    return makeBackgroundRuntimeOutcome("new-chat-failed", {
+      ok: false,
+      action: "newChat",
+      providerId: siteId,
+      siteId,
+      reason: navigation?.reason || "new-chat-navigation-timeout"
+    });
+  }
+
+  const runtimeReady = await recoverCompatibilityContentRuntime(rec.tabId);
+  if (!runtimeReady) {
+    return makeBackgroundRuntimeOutcome("runtime-not-ready", {
+      ok: false,
+      action: "newChat",
+      providerId: siteId,
+      siteId,
+      reason: "runtime-not-ready-after-new-chat"
+    });
+  }
+
+  return makeBackgroundRuntimeOutcome("response-found", {
+    action: "newChat",
+    providerId: siteId,
+    siteId,
+    reason: "",
+    navigatedUrl: targetUrl
+  });
+}
 
 async function newChatOnTargets(siteIds, siteEntries, origin, targetHints) {
   const job = async () => {
@@ -633,17 +781,48 @@ async function newChatOnTargets(siteIds, siteEntries, origin, targetHints) {
       const targets = await loadTargets();
       const ids = Array.isArray(siteIds) ? siteIds : [];
       await ensureTargetsForAction(ids, siteEntries, targets, origin, targetHints);
+      const outcomes = [];
       for (const siteId of ids) {
         const rec = targets[siteId];
-        if (!rec?.tabId) continue;
-        try {
-          await sendRuntimeMessageToTarget(rec.tabId, { type: "OA_RUNTIME_NEW_CHAT", siteId });
-          await delay(40);
-        } catch (_e) {
-          /* ignore */
+        if (!rec?.tabId) {
+          outcomes.push(makeBackgroundRuntimeOutcome("transport-failed", {
+            action: "newChat",
+            providerId: siteId,
+            siteId,
+            reason: "missing-tab"
+          }));
+          continue;
         }
+        try {
+          outcomes.push(await navigateTargetToNewChat(siteId, rec, siteEntries));
+        } catch (error) {
+          outcomes.push(makeBackgroundRuntimeOutcome("transport-failed", {
+            action: "newChat",
+            providerId: siteId,
+            siteId,
+            reason: "tab-unreachable",
+            error: String(error?.message || error || "")
+          }));
+        }
+        if (typeof delay === "function") await delay(40);
       }
-      return { ok: true };
+      const failed = outcomes.filter((outcome) => outcome?.ok === false);
+      if (failed.length) {
+        return {
+          ok: false,
+          status: failed.length === outcomes.length ? "transport-failed" : "partial-failed",
+          failedCount: failed.length,
+          succeededCount: outcomes.length - failed.length,
+          outcomes
+        };
+      }
+      return {
+        ok: true,
+        status: "response-found",
+        succeededCount: outcomes.length,
+        failedCount: 0,
+        outcomes
+      };
     });
   };
   const p = __oaNewChatChain.then(job);

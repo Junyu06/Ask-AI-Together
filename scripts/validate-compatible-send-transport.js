@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
 const repoRoot = path.resolve(__dirname, "..");
 const manifestPath = path.join(repoRoot, "Side-by-Side AI", "manifest.json");
 const contractPath = path.join(repoRoot, "Side-by-Side AI", "shared", "runtime-contract.js");
+const providerCatalogPath = path.join(repoRoot, "Side-by-Side AI", "shared", "provider-catalog.js");
 const constantsPath = path.join(repoRoot, "Side-by-Side AI", "background", "bg-constants.js");
 const backgroundPath = path.join(repoRoot, "Side-by-Side AI", "background", "background.js");
 const actionsPath = path.join(repoRoot, "Side-by-Side AI", "background", "bg-actions.js");
@@ -65,7 +66,12 @@ const collectSource = functionSource("collectLastFromTargets");
 const newChatSource = functionSource("newChatOnTargets");
 assert.match(collectSource, /sendRuntimeMessageToTarget\(rec\.tabId,\s*\{\s*type: "OA_RUNTIME_COLLECT_LAST"/);
 assert.doesNotMatch(collectSource, /chrome\.tabs\.sendMessage/);
-assert.match(newChatSource, /sendRuntimeMessageToTarget\(rec\.tabId,\s*\{\s*type: "OA_RUNTIME_NEW_CHAT"/);
+assert.match(actionsSource, /async function navigateTargetToNewChat/);
+assert.match(actionsSource, /chrome\.tabs\.update\(rec\.tabId,\s*\{\s*url: targetUrl\s*\}\)/);
+assert.match(actionsSource, /chrome\.tabs\.reload\(rec\.tabId\)/);
+assert.match(actionsSource, /waitForNewChatNavigation\(rec\.tabId,\s*siteId,\s*targetUrl\)/);
+assert.match(actionsSource, /recoverCompatibilityContentRuntime\(rec\.tabId\)/);
+assert.match(newChatSource, /outcomes/, "new chat should return per-provider outcomes for bridge diagnostics");
 assert.doesNotMatch(newChatSource, /chrome\.tabs\.sendMessage/);
 
 assert.match(pageEmbedSource, /OA_EMBED_REQUEST_CONTEXT/, "embedded parent page should handle explicit pre-send context requests");
@@ -161,21 +167,75 @@ function makeContext({
   sendMessageImpl,
   executeScriptImpl,
   tabUrls = {},
-  discoveredTabs = []
+  discoveredTabs = [],
+  tabUpdateImpl,
+  tabReloadImpl,
+  autoCompleteNavigation = true,
+  fastTimers = false
 }) {
+  const nativeSetTimeout = setTimeout;
+  const nativeClearTimeout = clearTimeout;
   let mutableTargets = JSON.parse(JSON.stringify(targets || {}));
+  const mutableTabs = new Map();
+  for (const tab of discoveredTabs) {
+    mutableTabs.set(tab.id, {
+      status: "complete",
+      ...JSON.parse(JSON.stringify(tab))
+    });
+  }
+  for (const rec of Object.values(mutableTargets)) {
+    if (!rec?.tabId || mutableTabs.has(rec.tabId)) continue;
+    mutableTabs.set(rec.tabId, {
+      id: rec.tabId,
+      windowId: rec.windowId || 1,
+      status: "complete",
+      url: tabUrls[rec.tabId] || (rec.siteId === "gemini" ? "https://gemini.google.com/app" : "https://chatgpt.com/c/current")
+    });
+  }
   const historyEntries = [];
   const executeScriptCalls = [];
+  const tabUpdateCalls = [];
+  const tabReloadCalls = [];
+  const updatedListeners = new Set();
   function hostMatches(url, siteId, siteUrl) {
     const host = new URL(url).hostname;
     const configuredHost = new URL(siteUrl || (siteId === "gemini" ? "https://gemini.google.com/app" : "https://chatgpt.com/")).hostname;
     return host === configuredHost || host.endsWith("." + configuredHost);
+  }
+  function cloneTab(tab) {
+    return JSON.parse(JSON.stringify(tab));
+  }
+  function fallbackTab(tabId) {
+    return {
+      id: tabId,
+      windowId: 1,
+      status: "complete",
+      url: tabUrls[tabId] || "https://chatgpt.com/c/current"
+    };
+  }
+  function tabRecord(tabId) {
+    if (!mutableTabs.has(tabId)) mutableTabs.set(tabId, fallbackTab(tabId));
+    return mutableTabs.get(tabId);
+  }
+  function emitUpdated(tabId, changeInfo, tabPatch = {}) {
+    const tab = tabRecord(tabId);
+    Object.assign(tab, tabPatch);
+    if (changeInfo?.url) tab.url = changeInfo.url;
+    if (changeInfo?.status) tab.status = changeInfo.status;
+    for (const listener of Array.from(updatedListeners)) {
+      listener(tabId, JSON.parse(JSON.stringify(changeInfo || {})), cloneTab(tab));
+    }
   }
   const context = vm.createContext({
     console,
     Date,
     Math,
     Promise,
+    URL,
+    setTimeout(callback, ms, ...args) {
+      return nativeSetTimeout(callback, fastTimers ? 0 : ms, ...args);
+    },
+    clearTimeout: nativeClearTimeout,
     globalThis: null,
     AskAiTogetherHistoryService: {
       prependEntry(entry) {
@@ -234,9 +294,44 @@ function makeContext({
       },
       tabs: {
         async get(tabId) {
-          return { id: tabId, url: tabUrls[tabId] || "https://chatgpt.com/c/current" };
+          return cloneTab(tabRecord(tabId));
         },
-        sendMessage: sendMessageImpl
+        async update(tabId, properties = {}) {
+          tabUpdateCalls.push({ tabId, properties: JSON.parse(JSON.stringify(properties)) });
+          if (tabUpdateImpl) {
+            return tabUpdateImpl(tabId, properties, { emitUpdated, tabRecord, cloneTab });
+          }
+          const tab = tabRecord(tabId);
+          if (properties.url) {
+            tab.url = properties.url;
+            tab.status = "loading";
+            emitUpdated(tabId, { url: properties.url }, tab);
+            if (autoCompleteNavigation) {
+              nativeSetTimeout(() => emitUpdated(tabId, { status: "complete" }, { status: "complete" }), 0);
+            }
+          }
+          if (properties.active != null) tab.active = properties.active;
+          return cloneTab(tab);
+        },
+        async reload(tabId) {
+          tabReloadCalls.push({ tabId });
+          if (tabReloadImpl) return tabReloadImpl(tabId, { emitUpdated, tabRecord, cloneTab });
+          const tab = tabRecord(tabId);
+          tab.status = "loading";
+          if (autoCompleteNavigation) {
+            nativeSetTimeout(() => emitUpdated(tabId, { status: "complete" }, { status: "complete" }), 0);
+          }
+          return undefined;
+        },
+        sendMessage: sendMessageImpl,
+        onUpdated: {
+          addListener(listener) {
+            updatedListeners.add(listener);
+          },
+          removeListener(listener) {
+            updatedListeners.delete(listener);
+          }
+        }
       },
       scripting: {
         async executeScript(details) {
@@ -248,6 +343,7 @@ function makeContext({
   });
   context.globalThis = context;
 
+  vm.runInContext(fs.readFileSync(providerCatalogPath, "utf8"), context, { filename: providerCatalogPath });
   vm.runInContext(fs.readFileSync(contractPath, "utf8"), context, { filename: contractPath });
   vm.runInContext(fs.readFileSync(constantsPath, "utf8"), context, { filename: constantsPath });
   vm.runInContext(actionsSource, context, { filename: actionsPath });
@@ -256,8 +352,14 @@ function makeContext({
     context,
     historyEntries,
     executeScriptCalls,
+    tabUpdateCalls,
+    tabReloadCalls,
+    emitUpdated,
     getTargets() {
       return JSON.parse(JSON.stringify(mutableTargets));
+    },
+    getTab(tabId) {
+      return cloneTab(tabRecord(tabId));
     }
   };
 }
@@ -652,7 +754,7 @@ function makeContext({
     assert.equal(probeCount, 2);
     assert.deepEqual(JSON.parse(JSON.stringify(result.sections)), [{
       siteId: "gemini",
-      siteName: "gemini",
+      siteName: "Gemini",
       text: "OK COMPAT RETEST",
       status: "response-found",
       reason: ""
@@ -660,24 +762,9 @@ function makeContext({
   }
 
   {
-    let newChatAttempts = 0;
-    const { context, executeScriptCalls } = makeContext({
+    const { context, executeScriptCalls, tabUpdateCalls, tabReloadCalls, getTab } = makeContext({
       targets: {
         chatgpt: { siteId: "chatgpt", windowId: 10, tabId: 101, transport: "window" }
-      },
-      async sendMessageImpl(tabId, message) {
-        newChatAttempts += 1;
-        assert.equal(tabId, 101);
-        assert.equal(message.type, "OA_RUNTIME_NEW_CHAT");
-        if (newChatAttempts === 1) {
-          throw new Error("Could not establish connection. Receiving end does not exist.");
-        }
-        return {
-          ok: true,
-          status: "response-found",
-          action: "newChat",
-          providerId: message.siteId
-        };
       },
       async executeScriptImpl(details) {
         const funcSource = String(details.func || "");
@@ -696,8 +783,183 @@ function makeContext({
     );
 
     assert.equal(result.ok, true);
-    assert.equal(newChatAttempts, 2, "new chat should retry through sendRuntimeMessageToTarget recovery");
+    assert.equal(result.failedCount, 0);
+    const providerTabUpdates = tabUpdateCalls.filter((call) => call.tabId === 101);
+    assert.equal(providerTabUpdates.length, 1, "new chat should navigate the provider tab at background level");
+    assert.deepEqual(providerTabUpdates[0], { tabId: 101, properties: { url: "https://chatgpt.com/" } });
+    assert.equal(tabReloadCalls.length, 0);
+    assert.equal(getTab(101).status, "complete", "new chat should wait for tab completion before reporting success");
+    assert.equal(result.outcomes[0].ok, true);
+    assert.equal(result.outcomes[0].status, "response-found");
+    assert.equal(result.outcomes[0].providerId, "chatgpt");
+    assert.equal(result.outcomes[0].siteId, "chatgpt");
+    assert.equal(result.outcomes[0].reason, "");
+    assert.equal(result.outcomes[0].navigatedUrl, "https://chatgpt.com/");
     assert.equal(executeScriptCalls.filter((details) => Array.isArray(details.files)).length, 0);
+  }
+
+  {
+    const { context, tabUpdateCalls, tabReloadCalls } = makeContext({
+      targets: {
+        claude: { siteId: "claude", windowId: 30, tabId: 303, transport: "window" }
+      },
+      tabUrls: {
+        303: "https://claude.ai/new?model=sonnet#draft"
+      },
+      async executeScriptImpl(details) {
+        const funcSource = String(details.func || "");
+        if (funcSource.includes("hasRuntime")) {
+          return [{ result: { hasRuntime: true, hasTransport: true, hasRuntimeMessageListener: true, hasRecoveryListener: false } }];
+        }
+        return [];
+      }
+    });
+
+    const result = await context.newChatOnTargets(
+      ["claude"],
+      [{ siteId: "claude", url: "https://claude.ai/" }]
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(tabUpdateCalls.length, 0, "matching new-chat URL should reload instead of navigating");
+    assert.equal(tabReloadCalls.length, 1);
+    assert.deepEqual(tabReloadCalls[0], { tabId: 303 });
+  }
+
+  {
+    const { context } = makeContext({
+      targets: {
+        chatgpt: { siteId: "chatgpt", windowId: 10, tabId: 101, transport: "window" }
+      },
+      fastTimers: true,
+      tabUpdateImpl(tabId, properties, helpers) {
+        assert.equal(properties.url, "https://chatgpt.com/");
+        const tab = helpers.tabRecord(tabId);
+        tab.url = "https://chatgpt.com/c/old-conversation";
+        tab.status = "complete";
+        return helpers.cloneTab(tab);
+      },
+      async executeScriptImpl() {
+        throw new Error("runtime recovery should not run when old conversation URL is complete");
+      }
+    });
+
+    const result = await context.newChatOnTargets(
+      ["chatgpt"],
+      [{ siteId: "chatgpt", url: "https://chatgpt.com/" }]
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "transport-failed");
+    assert.equal(result.outcomes[0].ok, false);
+    assert.equal(result.outcomes[0].status, "new-chat-failed");
+    assert.equal(result.outcomes[0].reason, "new-chat-navigation-timeout");
+  }
+
+  {
+    const { context } = makeContext({
+      targets: {}
+    });
+
+    const result = await context.newChatOnTargets(
+      ["chatgpt"],
+      [{ siteId: "chatgpt", url: "https://chatgpt.com/" }]
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "transport-failed");
+    assert.equal(result.failedCount, 1);
+    assert.equal(result.outcomes[0].ok, false);
+    assert.equal(result.outcomes[0].providerId, "chatgpt");
+    assert.equal(result.outcomes[0].siteId, "chatgpt");
+    assert.equal(result.outcomes[0].reason, "missing-tab");
+  }
+
+  {
+    const { context } = makeContext({
+      targets: {
+        chatgpt: { siteId: "chatgpt", windowId: 10, tabId: 101, transport: "window" }
+      },
+      autoCompleteNavigation: false,
+      fastTimers: true,
+      async executeScriptImpl() {
+        throw new Error("runtime recovery should not run before navigation readiness");
+      }
+    });
+
+    const result = await context.newChatOnTargets(
+      ["chatgpt"],
+      [{ siteId: "chatgpt", url: "https://chatgpt.com/" }]
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "transport-failed");
+    assert.equal(result.outcomes[0].ok, false);
+    assert.equal(result.outcomes[0].status, "new-chat-failed");
+    assert.equal(result.outcomes[0].reason, "new-chat-navigation-timeout");
+  }
+
+  {
+    const { context } = makeContext({
+      targets: {
+        chatgpt: { siteId: "chatgpt", windowId: 10, tabId: 101, transport: "window" }
+      },
+      async executeScriptImpl() {
+        return [];
+      }
+    });
+
+    const result = await context.newChatOnTargets(
+      ["chatgpt"],
+      [{ siteId: "chatgpt", url: "https://chatgpt.com/" }]
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "transport-failed");
+    assert.equal(result.outcomes[0].ok, false);
+    assert.equal(result.outcomes[0].status, "runtime-not-ready");
+    assert.equal(result.outcomes[0].reason, "runtime-not-ready-after-new-chat");
+  }
+
+  {
+    const { context } = makeContext({
+      targets: {
+        chatgpt: { siteId: "chatgpt", windowId: 10, tabId: 101, transport: "window" },
+        gemini: { siteId: "gemini", windowId: 20, tabId: 202, transport: "window" }
+      },
+      tabUrls: {
+        101: "https://chatgpt.com/c/current",
+        202: "https://gemini.google.com/app"
+      },
+      async executeScriptImpl(details) {
+        const tabId = details.target?.tabId;
+        const funcSource = String(details.func || "");
+        if (tabId === 101 && funcSource.includes("hasRuntime")) {
+          return [{ result: { hasRuntime: true, hasTransport: true, hasRuntimeMessageListener: true, hasRecoveryListener: false } }];
+        }
+        if (tabId === 202) return [];
+        return [];
+      }
+    });
+
+    const result = await context.newChatOnTargets(
+      ["chatgpt", "gemini"],
+      [
+        { siteId: "chatgpt", url: "https://chatgpt.com/" },
+        { siteId: "gemini", url: "https://gemini.google.com/app" }
+      ]
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "partial-failed");
+    assert.equal(result.succeededCount, 1);
+    assert.equal(result.failedCount, 1);
+    assert.equal(result.outcomes[0].ok, true);
+    assert.equal(result.outcomes[0].providerId, "chatgpt");
+    assert.equal(result.outcomes[1].ok, false);
+    assert.equal(result.outcomes[1].providerId, "gemini");
+    assert.equal(result.outcomes[1].status, "runtime-not-ready");
+    assert.equal(result.outcomes[1].reason, "runtime-not-ready-after-new-chat");
   }
 
   console.log("compatible send transport validation passed");

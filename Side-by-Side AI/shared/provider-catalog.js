@@ -113,7 +113,7 @@
       displayName: "Gemini",
       matchHosts: ["gemini.google.com"],
       homeUrl: "https://gemini.google.com/",
-      newChatUrl: "https://gemini.google.com/",
+      newChatUrl: "https://gemini.google.com/app",
       inputSelectors: [".ql-editor", 'div[contenteditable="true"]', "textarea"],
       sendSelectors: ["button.submit", 'button[type="submit"]'],
       newChatSelectors: [

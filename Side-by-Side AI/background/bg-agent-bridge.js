@@ -20,7 +20,10 @@ const AGENT_BRIDGE_PAYLOAD_FIELDS = new Set([
   "prompt",
   "options"
 ]);
-const AGENT_BRIDGE_OPTION_FIELDS = new Set(["timeoutMs", "deadlineMs", "poll"]);
+const AGENT_BRIDGE_OPTION_FIELDS = new Set(["timeoutMs", "deadlineMs", "poll", "newChatBeforeSend", "newChatSettleMs"]);
+const AGENT_BRIDGE_NEW_CHAT_TIMEOUT_MS = 5000;
+const AGENT_BRIDGE_NEW_CHAT_DEFAULT_SETTLE_MS = 2000;
+const AGENT_BRIDGE_NEW_CHAT_MAX_SETTLE_MS = 5000;
 const AGENT_BRIDGE_FORBIDDEN_KEYS = new Set([
   "attachment",
   "attachments",
@@ -150,6 +153,15 @@ function validateAgentBridgePayload(rawPayload) {
     for (const key of Object.keys(options)) {
       if (!AGENT_BRIDGE_OPTION_FIELDS.has(key)) return failClosed("unknown-option-field", { field: `options.${key}` });
     }
+    if (options.newChatBeforeSend != null && typeof options.newChatBeforeSend !== "boolean") {
+      return failClosed("invalid-option-field", { field: "options.newChatBeforeSend" });
+    }
+    if (options.newChatSettleMs != null) {
+      const settleMs = Number(options.newChatSettleMs);
+      if (!Number.isFinite(settleMs) || settleMs < 0) {
+        return failClosed("invalid-option-field", { field: "options.newChatSettleMs" });
+      }
+    }
   }
 
   const providerIds = normalizeProviderIds(rawPayload.providerIds);
@@ -192,6 +204,8 @@ function createProviderEnvelope(run, providerId, patch = {}) {
     text,
     reason: "",
     timestamps: {
+      newChatStartedAt: "",
+      newChatCompletedAt: "",
       baselineAt: baseline.baselineAt || "",
       submittedAt: "",
       visibleAt: "",
@@ -199,6 +213,9 @@ function createProviderEnvelope(run, providerId, patch = {}) {
     },
     audit: {
       promptHash: run.audit.promptHash,
+      newChatBeforeSend: null,
+      newChatStatus: "",
+      newChatReason: "",
       preSendLatestHash: baseline.preSendLatestHash || "",
       answerHash,
       answerLength: text.length,
@@ -307,6 +324,159 @@ function collectPhaseFromSection(section) {
   if (status === "transport-failed") return "transport-failed";
   if (status === "extraction-timeout") return "extraction-timeout";
   return section?.text ? "response-found" : "response-empty";
+}
+
+function agentBridgeDelay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldNewChatBeforeSend(options = {}) {
+  return options.newChatBeforeSend !== false;
+}
+
+function newChatSettleMsForOptions(options = {}) {
+  if (options.newChatSettleMs == null) return AGENT_BRIDGE_NEW_CHAT_DEFAULT_SETTLE_MS;
+  return Math.min(Math.floor(Number(options.newChatSettleMs)), AGENT_BRIDGE_NEW_CHAT_MAX_SETTLE_MS);
+}
+
+async function runWithAgentBridgeTimeout(work, timeoutMs, reason) {
+  let timeoutId = 0;
+  const timeout = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve({ timedOut: true, reason }), timeoutMs);
+  });
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(work).then((value) => ({ timedOut: false, value })),
+      timeout
+    ]);
+    return result;
+  } catch (error) {
+    return {
+      timedOut: false,
+      error,
+      reason: String(error?.message || error || reason)
+    };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function newChatPhaseFromOutcome(outcome, fallbackPhase) {
+  if (!outcome) return fallbackPhase;
+  const status = String(outcome.status || "");
+  if (outcome.ok === false) return status || "new-chat-failed";
+  if (!status || status === "response-found" || status === "response-empty") return "new-chat-submitted";
+  return status;
+}
+
+function newChatOutcomeSucceeded(outcome) {
+  if (!outcome) return false;
+  if (outcome.ok === false) return false;
+  const status = String(outcome.status || "");
+  return ![
+    "transport-failed",
+    "runtime-not-ready",
+    "new-chat-failed",
+    "provider-not-found",
+    "capability-unsupported"
+  ].includes(status);
+}
+
+function markNewChatForRun(run, phase, fields = {}) {
+  const completedAt = fields.completedAt || "";
+  const startedAt = fields.startedAt || "";
+  const reason = fields.reason || "";
+  run.audit.newChatBeforeSend = fields.beforeSend;
+  run.audit.newChatStatus = phase;
+  run.audit.newChatReason = reason;
+  for (const providerId of run.providerIds) {
+    const providerOutcome = outcomeForProvider(fields.result, providerId);
+    const providerPhase = newChatPhaseFromOutcome(providerOutcome, phase);
+    const providerReason = providerOutcome?.reason || providerOutcome?.error || reason;
+    setProviderResult(run, providerId, {
+      newChatPhase: providerPhase,
+      reason: providerReason || "",
+      timestamps: {
+        newChatStartedAt: startedAt,
+        newChatCompletedAt: completedAt
+      },
+      audit: {
+        newChatBeforeSend: fields.beforeSend,
+        newChatStatus: providerPhase,
+        newChatReason: providerReason || ""
+      }
+    });
+  }
+}
+
+async function newChatBeforeSendForRun(run, normalized, entries, origin) {
+  if (!shouldNewChatBeforeSend(normalized.options)) {
+    markNewChatForRun(run, "skipped", {
+      beforeSend: false,
+      reason: "disabled-by-option"
+    });
+    return { ok: true, status: "skipped", reason: "disabled-by-option" };
+  }
+
+  const startedAt = nowIso();
+  markNewChatForRun(run, "new-chat-started", {
+    beforeSend: true,
+    startedAt
+  });
+
+  const outcome = await runWithAgentBridgeTimeout(
+    () => newChatOnTargets(run.providerIds, entries, origin, null),
+    AGENT_BRIDGE_NEW_CHAT_TIMEOUT_MS,
+    "new-chat-timeout"
+  );
+  const completedAt = nowIso();
+
+  if (outcome.timedOut) {
+    const reason = outcome.reason || "new-chat-timeout";
+    markNewChatForRun(run, "new-chat-timeout", {
+      beforeSend: true,
+      startedAt,
+      completedAt,
+      reason
+    });
+    return { ok: false, status: "new-chat-timeout", reason };
+  }
+
+  if (outcome.error) {
+    const reason = outcome.reason || "new-chat-failed";
+    markNewChatForRun(run, "new-chat-failed", {
+      beforeSend: true,
+      startedAt,
+      completedAt,
+      reason
+    });
+    return { ok: false, status: "new-chat-failed", reason };
+  }
+
+  const result = outcome.value || {};
+  const hasProviderOutcomes = Array.isArray(result?.outcomes);
+  const failedProviderId = run.providerIds.find((providerId) => {
+    const providerOutcome = hasProviderOutcomes ? outcomeForProvider(result, providerId) : null;
+    return !newChatOutcomeSucceeded(providerOutcome);
+  });
+  const failedProvider = failedProviderId ? outcomeForProvider(result, failedProviderId) : null;
+  const phase = result?.ok === false || !hasProviderOutcomes || failedProvider ? "new-chat-failed" : "new-chat-submitted";
+  const reason = result?.reason || result?.error || failedProvider?.reason || failedProvider?.error || (!hasProviderOutcomes ? "new-chat-outcomes-missing" : "");
+  markNewChatForRun(run, phase, {
+    beforeSend: true,
+    startedAt,
+    completedAt,
+    reason,
+    result
+  });
+
+  if (phase === "new-chat-failed") {
+    return { ok: false, status: "new-chat-failed", reason: reason || "new-chat-failed" };
+  }
+
+  const settleMs = newChatSettleMsForOptions(normalized.options);
+  if (settleMs > 0) await agentBridgeDelay(settleMs);
+  return { ok: true, status: phase, reason: "" };
 }
 
 function findRunByRequest(normalized) {
@@ -485,8 +655,46 @@ async function bridgeSendAll(normalized, context) {
   rememberRun(run);
   await persistAgentBridgeRuns();
 
-  await baselineForRun(run, context?.origin);
   const entries = siteEntriesForProviderIds(run.providerIds);
+  try {
+    const targetResult = await openOrReuseWindows(entries, {
+      origin: context?.origin,
+      skipFocusChain: true
+    });
+    run.audit.targetBindingStatus = targetResult?.ok === false ? "target-bind-failed" : "target-bound";
+    run.audit.targetBindingReason = targetResult?.reason || targetResult?.error || "";
+  } catch (error) {
+    run.audit.targetBindingStatus = "target-bind-failed";
+    run.audit.targetBindingReason = String(error?.message || error || "target-bind-failed");
+  }
+  const newChatResult = await newChatBeforeSendForRun(run, normalized, entries, context?.origin);
+  if (newChatResult?.ok === false) {
+    run.status = newChatResult.status || "new-chat-failed";
+    run.timestamps.updatedAt = nowIso();
+    for (const providerId of run.providerIds) {
+      const current = run.providerResults.find((provider) => provider.providerId === providerId) || {};
+      setProviderResult(run, providerId, {
+        sendPhase: "blocked-before-send",
+        retryable: true,
+        reason: current.reason || newChatResult.reason || newChatResult.status || "new-chat-failed",
+        audit: {
+          errorCategory: newChatResult.status || "new-chat-failed"
+        }
+      });
+    }
+    await persistAgentBridgeRuns();
+    return {
+      ok: false,
+      bridgeVersion: AGENT_BRIDGE_VERSION,
+      action: normalized.action,
+      status: run.status,
+      reason: newChatResult.reason || run.status,
+      run: cloneRunEnvelope(run)
+    };
+  }
+  await persistAgentBridgeRuns();
+
+  await baselineForRun(run, context?.origin);
   const submittedAt = nowIso();
   const result = await sendPromptToTargets(
     run.providerIds,

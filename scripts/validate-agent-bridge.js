@@ -42,11 +42,19 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
 
   let sendCount = 0;
   let collectCount = 0;
+  let newChatCount = 0;
+  let openCount = 0;
+  let callSequence = [];
   let scenario = {
     baseline: { status: "response-found", text: "old answer" },
     collect: { status: "response-found", text: "new answer" },
+    newChat: {},
     send: {}
   };
+  const nativeSetTimeout = setTimeout;
+  const nativeClearTimeout = clearTimeout;
+  const sessionStore = {};
+  let sessionSetCount = 0;
   function sectionFor(siteId, config, fallbackText) {
     const text = "text" in (config || {}) ? String(config.text || "") : fallbackText;
     return {
@@ -63,7 +71,10 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     JSON,
     Object,
     Promise,
-    setTimeout,
+    setTimeout(callback, ms, ...args) {
+      return nativeSetTimeout(callback, scenario.fastTimers ? 0 : ms, ...args);
+    },
+    clearTimeout: nativeClearTimeout,
     globalThis: {},
     BUILTIN_SITE_URLS: {
       chatgpt: "https://chatgpt.com/",
@@ -79,6 +90,18 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
         },
         getManifest() {
           return { name: "Side-by-Side AI", version: "0.3.1" };
+        }
+      },
+      storage: {
+        session: {
+          async get(key) {
+            if (typeof key === "string") return { [key]: sessionStore[key] };
+            return {};
+          },
+          async set(values) {
+            Object.assign(sessionStore, JSON.parse(JSON.stringify(values || {})));
+            sessionSetCount += 1;
+          }
         }
       }
     },
@@ -98,6 +121,8 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
       };
     },
     async openOrReuseWindows(sites) {
+      openCount += 1;
+      callSequence.push("open");
       return {
         ok: true,
         targets: Object.fromEntries(sites.map((site, index) => [
@@ -106,8 +131,33 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
         ]))
       };
     },
+    async newChatOnTargets(siteIds) {
+      newChatCount += 1;
+      callSequence.push("newChat");
+      if (scenario.newChat?.throw) throw new Error(scenario.newChat.reason || "unit-new-chat-failed");
+      if (scenario.newChat?.hang) return new Promise(() => {});
+      const outcomes = siteIds.map((siteId) => {
+        const configured = scenario.newChat?.outcomes?.[siteId] || {};
+        const ok = configured.ok ?? (scenario.newChat?.ok !== false);
+        return {
+          ok,
+          status: configured.status || scenario.newChat?.status || (ok ? "response-found" : "new-chat-failed"),
+          providerId: siteId,
+          siteId,
+          reason: configured.reason || scenario.newChat?.reason || ""
+        };
+      });
+      const failed = outcomes.filter((outcome) => outcome.ok === false);
+      return {
+        ok: failed.length === 0,
+        status: failed.length ? (failed.length === outcomes.length ? "new-chat-failed" : "partial-failed") : "response-found",
+        reason: scenario.newChat?.reason || "",
+        outcomes
+      };
+    },
     async sendPromptToTargets(siteIds, message, requestId, sites, files, origin, targetHints, actionContext) {
       sendCount += 1;
+      callSequence.push("send");
       assert.equal(actionContext.historyMode, "metadata-only");
       const failed = scenario.send?.failed === true;
       return {
@@ -125,7 +175,10 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     },
     async collectLastFromTargets(siteIds) {
       collectCount += 1;
-      const config = collectCount === 1 ? scenario.baseline : scenario.collect;
+      const config = Array.isArray(scenario.collectQueue) && scenario.collectQueue.length
+        ? scenario.collectQueue.shift()
+        : collectCount === 1 ? scenario.baseline : scenario.collect;
+      callSequence.push(config?.label || (collectCount === 1 ? "baseline" : "collect"));
       if (config?.throw) throw new Error(config.reason || "unit-baseline-failed");
       return {
         ok: config?.ok !== false,
@@ -144,6 +197,8 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", unexpected: true })).reason, "unknown-field");
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", providerIds: ["deepseek"] })).reason, "unknown-provider");
   assert.match((await bridge.handleAgentBridgeRequest({ action: "health", options: { selector: "x" } })).reason, /forbidden-field/);
+  assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", options: { surprise: true } })).reason, "unknown-option-field");
+  assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", options: { newChatBeforeSend: "false" } })).reason, "invalid-option-field");
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "sendAll", providerIds: ["chatgpt"], prompt: "x", files: [] })).reason, "unknown-field");
   assert.equal(
     (await bridge.handleAgentBridgeRequest(
@@ -178,10 +233,15 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   bridge._test.resetAgentBridgeStateForTest();
   sendCount = 0;
   collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
   scenario = {
     baseline: { status: "response-found", text: "old answer" },
     collect: { status: "response-found", text: "new answer" },
-    send: {}
+    newChat: {},
+    send: {},
+    fastTimers: true
   };
   const firstConcurrent = bridge.handleAgentBridgeRequest({
     action: "sendAll",
@@ -189,7 +249,8 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     runId: "run-concurrent",
     idempotencyKey: "idem-concurrent",
     providerIds: ["chatgpt"],
-    prompt: "question"
+    prompt: "question",
+    options: { newChatSettleMs: 0 }
   });
   const secondConcurrent = bridge.handleAgentBridgeRequest({
     action: "sendAll",
@@ -197,10 +258,13 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     runId: "run-concurrent",
     idempotencyKey: "idem-concurrent",
     providerIds: ["chatgpt"],
-    prompt: "question"
+    prompt: "question",
+    options: { newChatSettleMs: 0 }
   });
   const concurrentResults = await Promise.all([firstConcurrent, secondConcurrent]);
   assert.equal(sendCount, 1, "concurrent duplicate sendAll must not resend");
+  assert.equal(openCount, 1, "concurrent duplicate sendAll must not re-open targets");
+  assert.equal(newChatCount, 1, "concurrent duplicate sendAll must not start a second new chat");
   assert.equal(
     concurrentResults.filter((item) => item.status === "duplicate-blocked").length,
     1,
@@ -210,10 +274,15 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   bridge._test.resetAgentBridgeStateForTest();
   sendCount = 0;
   collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
   scenario = {
     baseline: { status: "response-found", text: "old answer" },
     collect: { status: "response-found", text: "new answer" },
-    send: {}
+    newChat: {},
+    send: {},
+    fastTimers: true
   };
   const send = await bridge.handleAgentBridgeRequest({
     action: "sendAll",
@@ -227,7 +296,23 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(send.run.providerResults[0].sendPhase, "send-submitted");
   assert.equal(send.run.providerResults[0].audit.promptHash.startsWith("fnv1a32:"), true);
   assert.equal(send.run.providerResults[0].audit.preSendLatestHash.startsWith("fnv1a32:"), true);
+  assert.equal(send.run.providerResults[0].newChatPhase, "new-chat-submitted");
+  assert.equal(send.run.providerResults[0].audit.newChatBeforeSend, true);
+  assert.equal(send.run.providerResults[0].audit.newChatStatus, "new-chat-submitted");
   assert.equal(send.run.audit.historyMode, "metadata-only");
+  assert.equal(send.run.audit.newChatBeforeSend, true);
+  assert.equal(send.run.audit.newChatStatus, "new-chat-submitted");
+  assert.equal(openCount, 1);
+  assert.equal(newChatCount, 1);
+  assert.deepEqual(callSequence, ["open", "newChat", "baseline", "send"]);
+  assert.equal(sessionSetCount > 0, true, "sendAll should persist run state to chrome.storage.session");
+  assert.equal(
+    (sessionStore.oa_agent_bridge_runs_v1 || []).some((run) =>
+      run.runId === "run-1" && run.audit?.newChatStatus === "new-chat-submitted"
+    ),
+    true,
+    "persisted run should include newChat audit state"
+  );
 
   const duplicate = await bridge.handleAgentBridgeRequest({
     action: "sendAll",
@@ -239,14 +324,190 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   });
   assert.equal(duplicate.status, "duplicate-blocked");
   assert.equal(sendCount, 1, "duplicate sendAll must not resend");
+  assert.equal(newChatCount, 1, "duplicate sendAll must not start another new chat");
+
+  bridge._test.resetAgentBridgeStateForTest();
+  sendCount = 0;
+  collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
+  scenario = {
+    baseline: { status: "response-empty", text: "" },
+    collect: { status: "response-found", text: "new answer" },
+    newChat: {},
+    send: {}
+  };
+  const sendWithoutNewChat = await bridge.handleAgentBridgeRequest({
+    action: "sendAll",
+    requestId: "req-send-no-new-chat",
+    runId: "run-no-new-chat",
+    idempotencyKey: "idem-no-new-chat",
+    providerIds: ["chatgpt"],
+    prompt: "question",
+    options: { newChatBeforeSend: false }
+  });
+  assert.equal(sendWithoutNewChat.ok, true);
+  assert.equal(openCount, 1);
+  assert.equal(newChatCount, 0, "explicit newChatBeforeSend false must skip newChatOnTargets");
+  assert.equal(sendWithoutNewChat.run.providerResults[0].newChatPhase, "skipped");
+  assert.equal(sendWithoutNewChat.run.providerResults[0].audit.newChatBeforeSend, false);
+  assert.equal(sendWithoutNewChat.run.providerResults[0].audit.newChatReason, "disabled-by-option");
+  assert.deepEqual(callSequence, ["open", "baseline", "send"]);
+
+  bridge._test.resetAgentBridgeStateForTest();
+  sendCount = 0;
+  collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
+  scenario = {
+    baseline: { status: "response-empty", text: "" },
+    collect: { status: "response-found", text: "new answer" },
+    newChat: { ok: false, reason: "unit-new-chat-failed" },
+    send: {}
+  };
+  const sendWithNewChatFailure = await bridge.handleAgentBridgeRequest({
+    action: "sendAll",
+    requestId: "req-send-new-chat-failed",
+    runId: "run-new-chat-failed",
+    idempotencyKey: "idem-new-chat-failed",
+    providerIds: ["chatgpt"],
+    prompt: "question",
+    options: { newChatSettleMs: 0 }
+  });
+  assert.equal(sendWithNewChatFailure.ok, false);
+  assert.equal(sendWithNewChatFailure.status, "new-chat-failed");
+  assert.equal(sendWithNewChatFailure.reason, "unit-new-chat-failed");
+  assert.equal(sendCount, 0, "new chat failure must fail closed before send");
+  assert.equal(collectCount, 0, "new chat failure must fail closed before baseline");
+  assert.deepEqual(callSequence, ["open", "newChat"]);
+  assert.equal(sendWithNewChatFailure.run.providerResults[0].sendPhase, "blocked-before-send");
+  assert.equal(sendWithNewChatFailure.run.providerResults[0].newChatPhase, "new-chat-failed");
+  assert.equal(sendWithNewChatFailure.run.providerResults[0].reason, "unit-new-chat-failed");
+  assert.equal(sendWithNewChatFailure.run.providerResults[0].audit.newChatReason, "unit-new-chat-failed");
+
+  bridge._test.resetAgentBridgeStateForTest();
+  sendCount = 0;
+  collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
+  scenario = {
+    baseline: { status: "response-empty", text: "" },
+    collect: { status: "response-found", text: "new answer" },
+    newChat: { hang: true },
+    send: {},
+    fastTimers: true
+  };
+  const sendWithNewChatTimeout = await bridge.handleAgentBridgeRequest({
+    action: "sendAll",
+    requestId: "req-send-new-chat-timeout",
+    runId: "run-new-chat-timeout",
+    idempotencyKey: "idem-new-chat-timeout",
+    providerIds: ["chatgpt"],
+    prompt: "question",
+    options: { newChatSettleMs: 0 }
+  });
+  assert.equal(sendWithNewChatTimeout.ok, false);
+  assert.equal(sendWithNewChatTimeout.status, "new-chat-timeout");
+  assert.equal(sendCount, 0, "new chat timeout must fail closed before send");
+  assert.equal(collectCount, 0, "new chat timeout must fail closed before baseline");
+  assert.deepEqual(callSequence, ["open", "newChat"]);
+  assert.equal(sendWithNewChatTimeout.run.providerResults[0].sendPhase, "blocked-before-send");
+  assert.equal(sendWithNewChatTimeout.run.providerResults[0].newChatPhase, "new-chat-timeout");
+  assert.equal(sendWithNewChatTimeout.run.providerResults[0].reason, "new-chat-timeout");
+  assert.equal(sendWithNewChatTimeout.run.providerResults[0].audit.newChatReason, "new-chat-timeout");
+
+  bridge._test.resetAgentBridgeStateForTest();
+  sendCount = 0;
+  collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
+  scenario = {
+    baseline: { status: "response-empty", text: "" },
+    collect: { status: "response-found", text: "new answer" },
+    newChat: {
+      outcomes: {
+        chatgpt: { ok: true, status: "response-found" },
+        gemini: { ok: false, status: "new-chat-failed", reason: "unit-gemini-new-chat-failed" }
+      }
+    },
+    send: {}
+  };
+  const sendWithPartialNewChatFailure = await bridge.handleAgentBridgeRequest({
+    action: "sendAll",
+    requestId: "req-send-new-chat-partial",
+    runId: "run-new-chat-partial",
+    idempotencyKey: "idem-new-chat-partial",
+    providerIds: ["chatgpt", "gemini"],
+    prompt: "question",
+    options: { newChatSettleMs: 0 }
+  });
+  assert.equal(sendWithPartialNewChatFailure.ok, false);
+  assert.equal(sendWithPartialNewChatFailure.status, "new-chat-failed");
+  assert.equal(sendCount, 0, "partial new chat failure must fail closed before send");
+  assert.equal(collectCount, 0, "partial new chat failure must fail closed before baseline");
+  assert.deepEqual(callSequence, ["open", "newChat"]);
+  const partialProviders = Object.fromEntries(sendWithPartialNewChatFailure.run.providerResults.map((provider) => [provider.providerId, provider]));
+  assert.equal(partialProviders.chatgpt.newChatPhase, "new-chat-submitted");
+  assert.equal(partialProviders.chatgpt.sendPhase, "blocked-before-send");
+  assert.equal(partialProviders.gemini.newChatPhase, "new-chat-failed");
+  assert.equal(partialProviders.gemini.reason, "unit-gemini-new-chat-failed");
+  assert.equal(partialProviders.gemini.sendPhase, "blocked-before-send");
+
+  bridge._test.resetAgentBridgeStateForTest();
+  sendCount = 0;
+  collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
+  scenario = {
+    collectQueue: [
+      { label: "baseline-a", status: "response-empty", text: "" },
+      { label: "baseline-b", status: "response-empty", text: "" }
+    ],
+    baseline: { status: "response-empty", text: "" },
+    collect: { status: "response-found", text: "new answer" },
+    newChat: {},
+    send: {}
+  };
+  const consecutiveA = await bridge.handleAgentBridgeRequest({
+    action: "sendAll",
+    requestId: "req-consecutive-a",
+    runId: "run-consecutive-a",
+    idempotencyKey: "idem-consecutive-a",
+    providerIds: ["chatgpt"],
+    prompt: "question a",
+    options: { newChatSettleMs: 0 }
+  });
+  const consecutiveB = await bridge.handleAgentBridgeRequest({
+    action: "sendAll",
+    requestId: "req-consecutive-b",
+    runId: "run-consecutive-b",
+    idempotencyKey: "idem-consecutive-b",
+    providerIds: ["chatgpt"],
+    prompt: "question b",
+    options: { newChatSettleMs: 0 }
+  });
+  assert.equal(consecutiveA.run.providerResults[0].providerRunId, "run-consecutive-a:chatgpt");
+  assert.equal(consecutiveB.run.providerResults[0].providerRunId, "run-consecutive-b:chatgpt");
+  assert.equal(sendCount, 2);
+  assert.equal(newChatCount, 2, "separate runs should each start a fresh conversation");
+  assert.deepEqual(callSequence, ["open", "newChat", "baseline-a", "send", "open", "newChat", "baseline-b", "send"]);
 
   async function collectProviderForFreshnessCase(name, overrides) {
     bridge._test.resetAgentBridgeStateForTest();
     sendCount = 0;
     collectCount = 0;
+    newChatCount = 0;
+    openCount = 0;
+    callSequence = [];
     scenario = {
       baseline: overrides.baseline,
       collect: overrides.collect,
+      newChat: overrides.newChat || {},
       send: overrides.send || {}
     };
     await bridge.handleAgentBridgeRequest({
@@ -255,7 +516,8 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
       runId: `run-${name}`,
       idempotencyKey: `idem-${name}`,
       providerIds: ["chatgpt"],
-      prompt: "question"
+      prompt: "question",
+      options: { newChatSettleMs: 0 }
     });
     const collected = await bridge.handleAgentBridgeRequest({
       action: "collectAll",
