@@ -45,9 +45,12 @@ const AGENT_BRIDGE_FORBIDDEN_KEYS = new Set([
   "memoryDump",
   "hermesMemoryDump"
 ]);
+const AGENT_BRIDGE_RUNS_STORAGE = "oa_agent_bridge_runs_v1";
+const AGENT_BRIDGE_RUN_LIMIT = 50;
 
 const agentBridgeRuns = new Map();
 const agentBridgeIdempotencyIndex = new Map();
+let agentBridgeRunsHydrated = false;
 
 function nowIso() {
   return new Date().toISOString();
@@ -314,14 +317,46 @@ function findRunByRequest(normalized) {
   return null;
 }
 
-function rememberRun(run) {
+function rememberRunInMemory(run) {
   agentBridgeRuns.set(run.runId, run);
   if (run.idempotencyKey) agentBridgeIdempotencyIndex.set(run.idempotencyKey, run.runId);
-  if (agentBridgeRuns.size > 50) {
+  if (agentBridgeRuns.size > AGENT_BRIDGE_RUN_LIMIT) {
     const firstKey = agentBridgeRuns.keys().next().value;
     const old = agentBridgeRuns.get(firstKey);
     if (old?.idempotencyKey) agentBridgeIdempotencyIndex.delete(old.idempotencyKey);
     agentBridgeRuns.delete(firstKey);
+  }
+}
+
+function rememberRun(run) {
+  rememberRunInMemory(run);
+}
+
+async function hydrateAgentBridgeRuns() {
+  if (agentBridgeRunsHydrated) return;
+  agentBridgeRunsHydrated = true;
+  if (!chrome.storage?.session?.get) return;
+  try {
+    const data = await chrome.storage.session.get(AGENT_BRIDGE_RUNS_STORAGE);
+    const storedRuns = data?.[AGENT_BRIDGE_RUNS_STORAGE];
+    if (!Array.isArray(storedRuns)) return;
+    for (const run of storedRuns) {
+      if (!run || typeof run !== "object" || !run.runId) continue;
+      rememberRunInMemory(run);
+    }
+  } catch (_error) {
+    /* session persistence is best-effort; the bridge stays fail-closed per request */
+  }
+}
+
+async function persistAgentBridgeRuns() {
+  if (!chrome.storage?.session?.set) return;
+  try {
+    await chrome.storage.session.set({
+      [AGENT_BRIDGE_RUNS_STORAGE]: Array.from(agentBridgeRuns.values())
+    });
+  } catch (_error) {
+    /* session persistence is best-effort */
   }
 }
 
@@ -448,6 +483,7 @@ async function bridgeSendAll(normalized, context) {
   });
   run.status = "send-started";
   rememberRun(run);
+  await persistAgentBridgeRuns();
 
   await baselineForRun(run, context?.origin);
   const entries = siteEntriesForProviderIds(run.providerIds);
@@ -479,6 +515,7 @@ async function bridgeSendAll(normalized, context) {
     });
   }
 
+  await persistAgentBridgeRuns();
   return {
     ok: result?.ok !== false,
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -550,6 +587,7 @@ async function bridgeCollectAll(normalized, context) {
     });
   }
 
+  await persistAgentBridgeRuns();
   return {
     ok: true,
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -584,6 +622,7 @@ async function bridgeCancelRun(normalized) {
       retryable: false
     });
   }
+  await persistAgentBridgeRuns();
   return {
     ok: true,
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -599,6 +638,7 @@ async function handleAgentBridgeRequest(rawPayload, context = {}) {
   }
   const normalized = validateAgentBridgePayload(rawPayload);
   if (!normalized.ok) return normalized;
+  await hydrateAgentBridgeRuns();
   if (normalized.action === "health") return bridgeHealth(normalized);
   if (normalized.action === "getCapabilities") return bridgeGetCapabilities(normalized);
   if (normalized.action === "openOrBindTargets") return bridgeOpenOrBindTargets(normalized, context);
