@@ -506,7 +506,7 @@ async function ensureTargetsForAction(siteIds, siteEntries, targets, origin, tar
   if (changed) await saveTargets(targets);
 }
 
-async function sendPromptToTargets(siteIds, message, requestId, siteEntries, files = [], origin, targetHints) {
+async function sendPromptToTargets(siteIds, message, requestId, siteEntries, files = [], origin, targetHints, actionContext = {}) {
   const attachments = Array.isArray(files) ? files : [];
   if (attachments.length) {
     return attachmentUnsupportedOutcome(siteIds, siteEntries, "sendPrompt");
@@ -566,7 +566,7 @@ async function sendPromptToTargets(siteIds, message, requestId, siteEntries, fil
       outcomes
     };
   }
-  if (text.trim() && succeededIds.length) {
+  if (text.trim() && succeededIds.length && actionContext?.historyMode !== "metadata-only" && actionContext?.bypassHistory !== true) {
     await appendHistoryAfterSend(text, succeededIds, targets);
   }
   if (failed.length) {

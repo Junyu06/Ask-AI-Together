@@ -107,6 +107,7 @@
         "shared/quote-helper.js",
         "shared/text-format.js",
         "shared/history-service.js",
+        "shared/agent-bridge.js",
         "ui/controller/controller.css",
         "legacy/index.html",
         "legacy/app.js",

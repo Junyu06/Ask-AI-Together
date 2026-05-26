@@ -9,7 +9,8 @@ importScripts(
   "bg-tabs.js",
   "bg-switcher.js",
   "bg-tiling.js",
-  "bg-actions.js"
+  "bg-actions.js",
+  "bg-agent-bridge.js"
 );
 
 globalThis.__ASK_AI_TOGETHER_RUNTIME__?.markBootstrapped?.({
@@ -171,6 +172,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "OA_HISTORY_MUTATE") {
     runHistoryMutation(msg.payload)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+
+  if (msg.type === "OA_AGENT_BRIDGE") {
+    handleAgentBridgeRequest(msg.payload, {
+      origin: getMessageOrigin(sender, msg.origin),
+      sender
+    })
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
