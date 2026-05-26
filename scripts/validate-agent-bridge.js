@@ -159,6 +159,13 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     )).ok,
     true
   );
+  assert.equal(
+    (await bridge.handleAgentBridgeRequest(
+      { action: "health" },
+      { sender: { id: "unit-extension-id", url: "chrome-extension://unit-extension-id/legacy/index.html", tab: { id: 456 } } }
+    )).ok,
+    true
+  );
 
   const health = await bridge.handleAgentBridgeRequest({ action: "health", requestId: "req-health" });
   assert.equal(health.ok, true);

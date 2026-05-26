@@ -121,11 +121,13 @@ function failClosed(reason, fields = {}) {
 function isAuthorizedAgentBridgeSender(context = {}) {
   const sender = context.sender;
   if (!sender) return true;
-  if (sender.tab) return false;
   if (sender.id && chrome.runtime.id && sender.id !== chrome.runtime.id) return false;
   const senderUrl = String(sender.url || sender.origin || "");
+  const extensionUrl = chrome.runtime.getURL("");
+  if (senderUrl && senderUrl.startsWith(extensionUrl)) return true;
+  if (sender.tab) return false;
   if (!senderUrl) return true;
-  return senderUrl.startsWith(chrome.runtime.getURL(""));
+  return false;
 }
 
 function validateAgentBridgePayload(rawPayload) {
