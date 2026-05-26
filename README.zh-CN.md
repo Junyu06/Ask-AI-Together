@@ -21,14 +21,20 @@
 
 `Ask AI Together`（扩展名：`Side-by-Side AI`）可以将同一条提示词并行发送到多个 AI 官方站点，便于横向对比回答。
 
+这是一个网页 UI 集成扩展，不是独立 AI 服务。它会在分屏工作区或 Compatibility Mode 中打开各 AI 官方网站，因此使用前需要先分别登录对应 AI 网站。
+
 ## 功能
 
 - 多 AI iframe 分屏
+- Compatibility Mode，用于 iframe 内不稳定的站点
 - 单次输入并行发送到多个站点
 - `@` 指定站点，`#` 快速聚焦站点
+- 将当前可见的最新回复合并成后续追问 prompt
 - 新会话同步触发（`NEW_CHAT` 广播）
-- 图片粘贴/拖拽预加载
+- Legacy 分屏中对支持站点进行图片粘贴/拖拽预加载
 - 本地历史中心，可回到当时会话 URL
+- reload 后恢复历史中的站点会话 URL
+- 支持自定义站点，并在运行时请求对应站点权限
 - Pane 操作：放大/还原、在新标签页打开当前会话
 - 引用选中文本回填输入框
 - 主题：`system/light/dark`
@@ -46,6 +52,7 @@
 - Grok
 - Claude
 - Gemini
+- Perplexity
 
 ## 截图
 
@@ -66,18 +73,31 @@
 ## 项目结构
 
 - `Side-by-Side AI/manifest.json`：MV3 配置
-- `Side-by-Side AI/background.js`：打开主页面 + 动态响应头规则
-- `Side-by-Side AI/index.html`：主界面结构
-- `Side-by-Side AI/styles.css`：样式
-- `Side-by-Side AI/app.js`：分屏/发送/历史/设置逻辑
-- `Side-by-Side AI/content.js`：站点执行器（输入/发送/附图/新会话）
+- `Side-by-Side AI/legacy/`：默认分屏工作区
+- `Side-by-Side AI/background/`：service worker 模块，负责 tab/window 路由、平铺、历史和动作分发
+- `Side-by-Side AI/content/`：content-script runtime，负责输入、发送、回复提取、附件和引用 UI
+- `Side-by-Side AI/shared/`：provider catalog、runtime contract、文本格式化、history service 和共享 helper
+- `Side-by-Side AI/embed/`：网页内 Compatibility Mode dock 启动脚本
+- `Side-by-Side AI/ui/options/`：选项页 / Compatibility Mode 控制界面
+- `scripts/package-extension.sh`：生成 `dist/side-by-side-ai-v<manifest version>.zip`
 
 ## 扩展新站点
 
-需要同时更新两个文件：
+先更新共享 provider 定义，再同步权限范围：
 
-1. `Side-by-Side AI/app.js` -> `BUILTIN_SITES`（名称 + URL）
-2. `Side-by-Side AI/content.js` -> `SITES`（`matchHosts/inputSelectors/sendSelectors/newChatSelectors`）
+1. `Side-by-Side AI/shared/provider-catalog.js` -> 增加 provider metadata、selectors、默认 URL 和 response selectors
+2. `Side-by-Side AI/manifest.json` -> 内置站点需要同步 host permissions 和 AI-site embed match
+3. 运行相关 `scripts/validate-*.js` 检查，并在 Chrome 中 reload unpacked extension 后再做 live test
+
+## 打包
+
+修改 `Side-by-Side AI/manifest.json` 后，用下面命令打包：
+
+```bash
+scripts/package-extension.sh
+```
+
+zip 会输出到 `dist/`，文件名来自 manifest version。
 
 ## 贡献
 

@@ -12,6 +12,8 @@
 |------|------|
 | `background/` | Service Worker：`background.js` + `importScripts` 加载的 `bg-*.js`（窗口/标签/平铺/消息路由）。 |
 | `content/` | 注入 AI 网页的主 content scripts（顺序见下表，路径在 `manifest.json` 中写死）。 |
+| `shared/` | Provider catalog、runtime contract、text formatting、history service、quote helper 等共享模块。 |
+| `legacy/` | 默认 iframe split-pane 工作区：`legacy/index.html`、`legacy/app.js`、`legacy/content.js`、`legacy/styles.css`。 |
 | `embed/` | `page-embed-options.js`：仅在主框架、白名单 AI 域名上注入吸边按钮与侧栏 iframe（需 `web_accessible_resources`）。 |
 | `ui/` | 扩展选项页 `ui/options/`（广播、历史、站点与平铺设置）。 |
 | `assets/` | 多页面共享的样式与脚本（`styles.css`、`quick-focus.js`、`options-settings.js` 等）。 |
@@ -21,8 +23,9 @@
 
 - 单文件尽量 **≤700 行**；逻辑按职责拆文件，不要随意把无关代码合并进同一文件。
 - `manifest.json` 里 **content_scripts 顺序**与**background 的 `importScripts` 顺序**敏感；后加载依赖先加载的全局符号。
-- 修改站点选择器时，同时检查 `content/content-sites.js` 的 `SITES` / `RESPONSE_SELECTORS` 与 `background/bg-constants.js` 的 `SITE_HOSTS` / `BUILTIN_SITE_URLS` 是否一致。
+- 修改站点选择器时，优先改 `shared/provider-catalog.js`；`content/content-sites.js` 与 `background/bg-constants.js` 都从 catalog 派生或兼容它，不要重新复制一份 provider truth。
 - 扩展内页面路径一律相对 **扩展根目录**（如 `ui/options/options.html`）。iframe 侧栏需将选项页与依赖的 `assets/`、`ui/controller/controller.css` 列入 `web_accessible_resources`。
+- Compatibility Mode 明确不支持附件；Legacy attachment path 是 mode-owned 行为。Gemini 上传优先走 main-world attachment hook，再回退 isolated-world file input / drop / paste。
 
 ---
 
@@ -57,15 +60,20 @@
 
 | 顺序 | 文件 | 作用 |
 |------|------|------|
-| 1 | `content/content-sites.js` | 各站 URL、输入/发送/新对话选择器、`RESPONSE_SELECTORS`、`currentSite()`、`GENERIC_SITE`。 |
-| 2 | `content/content-dom.js` | Shadow DOM 穿透查询、`isVisible`、`sleep`、`clickFirstVisibleSelector`。 |
-| 3 | `content/content-response.js` | 抽取助手回复、`collectReplyNodes`。 |
-| 4 | `content/content-input.js` | 填充输入框、`clickSend` / `clickSendWithRetry`。 |
-| 5 | `content/content-attachments.js` | 附件与 Gemini 主世界注入。 |
-| 6 | `content/content-send-runtime.js` | 发送进度、快照、`sendPrompt`、`newChat`。 |
-| 7 | `content/content-quote-ui.js` | 划词引用、`OA_RUNTIME_*`、URL 上报。 |
+| 1 | `shared/runtime-contract.js` | Runtime message envelope、typed outcomes、capabilities。 |
+| 2 | `shared/provider-catalog.js` | 内置 provider、URL、selectors、capability metadata。 |
+| 3 | `shared/quote-helper.js` | Legacy / Compatibility 共用 quote button helper。 |
+| 4 | `content/content-sites.js` | 从 catalog 暴露 legacy-compatible `SITES` / `RESPONSE_SELECTORS` / `currentSite()`。 |
+| 5 | `content/content-dom.js` | Shadow DOM 穿透查询、`isVisible`、`sleep`、`clickFirstVisibleSelector`。 |
+| 6 | `content/content-response.js` | 抽取助手回复、`collectReplyNodes`。 |
+| 7 | `content/content-input.js` | 填充输入框、`clickSend` / `clickSendWithRetry`。 |
+| 8 | `content/content-attachments.js` | Legacy-only 附件路径；Gemini 优先 main-world hook。 |
+| 9 | `content/content-send-runtime.js` | 发送进度、快照、`sendPrompt`、`newChat`。 |
+| 10 | `content/content-shared-runtime.js` | `OA_RUNTIME_*` shared transport wrapper。 |
+| 11 | `legacy/content.js` | Legacy iframe `postMessage` adapter。 |
+| 12 | `content/content-quote-ui.js` | 划词引用、URL 上报。 |
 
-**仅顶层 AI 页**挂载划词引用与 URL 轮询；`OA_RUNTIME_*` 在 `window === window.top` 时处理。
+**仅顶层 AI 页**挂载划词引用与 URL 轮询；Legacy iframe messaging 由 `legacy/content.js` 适配，Compatibility/top-level runtime messaging 由 shared runtime 处理。
 
 ---
 
@@ -106,4 +114,5 @@
 
 - 加载未打包扩展：Chrome → 扩展程序 → 开发者模式 →「加载已解压的扩展程序」→ 选择本目录（`Side-by-Side AI`）。
 - 改 `manifest.json`、service worker 或 content script 列表后需 **重新加载扩展**。
-- `feature.md` 为旧版说明，可能与当前路径不一致，以本 README 与代码为准。
+- 打包：在仓库根目录运行 `scripts/package-extension.sh`，输出 `dist/side-by-side-ai-v<manifest version>.zip`。
+- 关键回归检查：运行相关 `scripts/validate-*.js` 后，reload unpacked extension，并在 Chrome 中做同一用户路径 live smoke。

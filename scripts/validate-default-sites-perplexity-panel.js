@@ -39,7 +39,7 @@ for (const source of [legacyHtmlSource, optionsHtmlSource]) {
   assert.ok(source.includes(zhModeHint), "static HTML fallback mode_hint should say Perplexity does not work in Default mode");
 }
 
-assert.ok(featureDocSource.includes("默认选中：`chatgpt`、`claude`、`gemini`。"));
+assert.ok(featureDocSource.includes("Default selected providers are ChatGPT, Claude, and Gemini."));
 assert.ok(featureDocSource.includes("- Perplexity"));
 
 assert.match(embedSource, /#oa-embed-root\.oa-open\.oa-embed-root--history\s*\{\s*height:\s*min\(560px, 72vh\) !important;\s*min-height:\s*320px !important;\s*\}/);

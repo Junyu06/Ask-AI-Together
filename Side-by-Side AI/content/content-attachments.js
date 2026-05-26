@@ -294,7 +294,8 @@ function attachByMainWorld(items) {
   });
 }
 
-async function attachFilesGemini(inputEl, files) {
+async function attachFilesGemini(inputEl, files, items) {
+  if (await attachByMainWorld(items)) return true;
   if (attachByFileInput(files, inputEl)) return true;
 
   const dropTargets = [
@@ -325,7 +326,7 @@ async function attachFiles(inputEl, items, siteId = "") {
   const files = toFiles(items);
   if (!files.length) return false;
   if (siteId === "gemini") {
-    return attachFilesGemini(inputEl, files);
+    return attachFilesGemini(inputEl, files, items);
   }
   if (attachByFileInput(files, inputEl)) return true;
   if (attachByDrop(inputEl, files)) return true;

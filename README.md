@@ -21,6 +21,8 @@
 
 `Ask AI Together` (extension name: `Side-by-Side AI`) helps you send one prompt to multiple AI official sites in parallel and compare answers side by side.
 
+This extension is a web UI integration tool, not a standalone AI service. It opens supported AI websites in a split workspace or Compatibility Mode, so you must sign in to each AI website before using it.
+
 Chrome Web Store:
 
 - <https://chromewebstore.google.com/detail/side-by-side-ai/>
@@ -28,11 +30,15 @@ Chrome Web Store:
 ## Features
 
 - Multi-AI split view with iframe panes
+- Compatibility Mode for sites that do not work reliably inside iframe panes
 - Broadcast one prompt to selected sites
 - `@` target specific site, `#` quick focus site
+- Combine the latest visible replies into one follow-up prompt
 - New chat sync trigger (`NEW_CHAT` broadcast)
-- Image paste/drag preload support
+- Image paste/drag preload support on supported Legacy panes
 - Local history center with session URL recall
+- Restore previous site session URLs after reload
+- Add custom sites with runtime host permission requests
 - Pane actions: maximize/restore, open current session in new tab
 - Quote selected text back to input box
 - Theme: `system/light/dark`
@@ -50,6 +56,7 @@ Chrome Web Store:
 - Grok
 - Claude
 - Gemini
+- Perplexity
 
 ## Screenshots
 
@@ -78,18 +85,31 @@ Load unpacked for local development:
 ## Project Structure
 
 - `Side-by-Side AI/manifest.json`: MV3 config
-- `Side-by-Side AI/background.js`: open main page + dynamic response header rules
-- `Side-by-Side AI/index.html`: main layout
-- `Side-by-Side AI/styles.css`: styles
-- `Side-by-Side AI/app.js`: split panes / broadcast / history / settings logic
-- `Side-by-Side AI/content.js`: site executor (input/send/image/new chat)
+- `Side-by-Side AI/legacy/`: default split-pane workspace
+- `Side-by-Side AI/background/`: service worker modules for tab/window routing, tiling, history, and action dispatch
+- `Side-by-Side AI/content/`: content-script runtime for input, send, response extraction, attachments, and quote UI
+- `Side-by-Side AI/shared/`: provider catalog, runtime contract, text formatting, history service, and shared helpers
+- `Side-by-Side AI/embed/`: in-page Compatibility Mode dock bootstrap
+- `Side-by-Side AI/ui/options/`: options / Compatibility Mode controller UI
+- `scripts/package-extension.sh`: creates `dist/side-by-side-ai-v<manifest version>.zip`
 
 ## Add a New Site
 
-Update both files:
+Update the shared provider definition first, then make the permission surface match it:
 
-1. `Side-by-Side AI/app.js` -> `BUILTIN_SITES` (name + URL)
-2. `Side-by-Side AI/content.js` -> `SITES` (`matchHosts/inputSelectors/sendSelectors/newChatSelectors`)
+1. `Side-by-Side AI/shared/provider-catalog.js` -> add provider metadata, selectors, default URL, and response selectors
+2. `Side-by-Side AI/manifest.json` -> add host permissions and the AI-site embed match if it is a built-in site
+3. Run the relevant `scripts/validate-*.js` checks and reload the unpacked extension in Chrome before live testing
+
+## Package
+
+After changing `Side-by-Side AI/manifest.json`, package the extension with:
+
+```bash
+scripts/package-extension.sh
+```
+
+The zip is written to `dist/` and is named from the manifest version.
 
 ## Contributing
 
