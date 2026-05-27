@@ -5,6 +5,27 @@ const AGENT_BRIDGE_PROVIDER_ALLOWLIST = Object.freeze(["chatgpt", "grok", "gemin
 const AGENT_BRIDGE_ACTIONS = new Set([
   "health",
   "getCapabilities",
+  "listProviders",
+  "openProvider",
+  "ensureFreshConversation",
+  "sendPrompt",
+  "collectResponse",
+  "getProviderStatus",
+  "openOrBindTargets",
+  "sendAll",
+  "collectAll",
+  "getRunState",
+  "cancelRun"
+]);
+const AGENT_BRIDGE_PRIMITIVE_ACTIONS = Object.freeze([
+  "listProviders",
+  "openProvider",
+  "ensureFreshConversation",
+  "sendPrompt",
+  "collectResponse",
+  "getProviderStatus"
+]);
+const AGENT_BRIDGE_COMPATIBILITY_ACTIONS = Object.freeze([
   "openOrBindTargets",
   "sendAll",
   "collectAll",
@@ -16,6 +37,7 @@ const AGENT_BRIDGE_PAYLOAD_FIELDS = new Set([
   "requestId",
   "runId",
   "idempotencyKey",
+  "providerId",
   "providerIds",
   "prompt",
   "options"
@@ -107,6 +129,10 @@ function normalizeProviderIds(providerIds) {
   return [...new Set(ids)];
 }
 
+function normalizeProviderId(providerId) {
+  return String(providerId || "").trim();
+}
+
 function siteEntriesForProviderIds(providerIds) {
   return providerIds.map((providerId) => ({
     siteId: providerId,
@@ -164,9 +190,23 @@ function validateAgentBridgePayload(rawPayload) {
     }
   }
 
+  const providerId = normalizeProviderId(rawPayload.providerId);
+  if (providerId && !AGENT_BRIDGE_PROVIDER_ALLOWLIST.includes(providerId)) {
+    return failClosed("unknown-provider", { providerId });
+  }
+
   const providerIds = normalizeProviderIds(rawPayload.providerIds);
   const unknownProvider = providerIds.find((providerId) => !AGENT_BRIDGE_PROVIDER_ALLOWLIST.includes(providerId));
   if (unknownProvider) return failClosed("unknown-provider", { providerId: unknownProvider });
+
+  if (AGENT_BRIDGE_PRIMITIVE_ACTIONS.includes(action) && action !== "listProviders") {
+    if (!providerId) return failClosed("providerId-required", { action });
+  }
+
+  if (action === "sendPrompt") {
+    const prompt = String(rawPayload.prompt || "");
+    if (!prompt.trim()) return failClosed("prompt-required");
+  }
 
   if (action === "sendAll") {
     const prompt = String(rawPayload.prompt || "");
@@ -179,6 +219,7 @@ function validateAgentBridgePayload(rawPayload) {
     requestId: String(rawPayload.requestId || `agent-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`),
     runId: String(rawPayload.runId || rawPayload.requestId || `run-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`),
     idempotencyKey: String(rawPayload.idempotencyKey || ""),
+    providerId,
     providerIds,
     prompt: String(rawPayload.prompt || ""),
     options: options || {}
@@ -569,6 +610,48 @@ async function baselineForRun(run, origin) {
   }
 }
 
+function bridgeActionMetadata() {
+  return {
+    connectionLayer: true,
+    primitiveActions: AGENT_BRIDGE_PRIMITIVE_ACTIONS.slice(),
+    compatibilityActions: AGENT_BRIDGE_COMPATIBILITY_ACTIONS.slice(),
+    deprecatedPipelineActions: AGENT_BRIDGE_COMPATIBILITY_ACTIONS.filter((action) => action !== "openOrBindTargets"),
+    deprecatedActions: AGENT_BRIDGE_COMPATIBILITY_ACTIONS.filter((action) => action !== "openOrBindTargets"),
+    historyMode: "metadata-only"
+  };
+}
+
+function primitiveProviderIds(normalized) {
+  if (normalized.providerId) return [normalized.providerId];
+  if (normalized.action === "listProviders") return normalized.providerIds;
+  return [normalized.providerId];
+}
+
+function normalizeCapabilitiesResult(providerIds, result) {
+  return providerIds.map((providerId) => {
+    const item = (result?.capabilities || []).find((capability) =>
+      String(capability?.siteId || capability?.providerId || "") === providerId
+    ) || {};
+    return {
+      providerId,
+      supportsAttachments: item?.supportsAttachments === true,
+      attachmentMode: item?.attachmentMode || "unsupported",
+      readiness: item?.readiness || "unknown"
+    };
+  });
+}
+
+function targetForProvider(targets, providerId) {
+  const target = targets?.[providerId] || {};
+  return {
+    providerId,
+    bound: Boolean(target?.tabId),
+    windowId: target?.windowId ?? null,
+    tabId: target?.tabId ?? null,
+    transport: target?.transport || (target?.tabId ? "window" : "none")
+  };
+}
+
 async function bridgeHealth(normalized) {
   const targets = await loadTargets();
   const manifest = chrome.runtime.getManifest();
@@ -584,6 +667,7 @@ async function bridgeHealth(normalized) {
       name: manifest?.name || ""
     },
     providerAllowlist: AGENT_BRIDGE_PROVIDER_ALLOWLIST.slice(),
+    ...bridgeActionMetadata(),
     targetTabs: AGENT_BRIDGE_PROVIDER_ALLOWLIST.map((providerId) => ({
       providerId,
       bound: Boolean(targets[providerId]?.tabId),
@@ -591,7 +675,6 @@ async function bridgeHealth(normalized) {
       tabId: targets[providerId]?.tabId ?? null
     })),
     backgroundRoundtrip: true,
-    historyMode: "metadata-only",
     lastRun: summarizeRun(lastRun)
   };
 }
@@ -606,12 +689,216 @@ async function bridgeGetCapabilities(normalized) {
     requestId: normalized.requestId,
     runId: normalized.runId,
     providerIds: normalized.providerIds,
-    capabilities: (result?.capabilities || normalized.providerIds.map((providerId) => ({ siteId: providerId }))).map((item) => ({
-      providerId: String(item?.siteId || item?.providerId || ""),
-      supportsAttachments: item?.supportsAttachments === true,
-      attachmentMode: item?.attachmentMode || "unsupported",
-      readiness: item?.readiness || "unknown"
-    }))
+    ...bridgeActionMetadata(),
+    capabilities: normalizeCapabilitiesResult(normalized.providerIds, result)
+  };
+}
+
+async function bridgeListProviders(normalized) {
+  const providerIds = primitiveProviderIds(normalized);
+  const entries = siteEntriesForProviderIds(providerIds);
+  const targets = await loadTargets();
+  let capabilitiesResult = null;
+  try {
+    capabilitiesResult = await getCapabilitiesForTargets(providerIds, entries);
+  } catch (error) {
+    capabilitiesResult = {
+      ok: false,
+      reason: String(error?.message || error || "capabilities-unavailable"),
+      capabilities: []
+    };
+  }
+  const capabilities = normalizeCapabilitiesResult(providerIds, capabilitiesResult);
+  return {
+    ok: capabilitiesResult?.ok !== false,
+    bridgeVersion: AGENT_BRIDGE_VERSION,
+    action: normalized.action,
+    requestId: normalized.requestId,
+    ...bridgeActionMetadata(),
+    providerAllowlist: AGENT_BRIDGE_PROVIDER_ALLOWLIST.slice(),
+    providers: providerIds.map((providerId) => ({
+      providerId,
+      allowlisted: true,
+      target: targetForProvider(targets, providerId),
+      capability: capabilities.find((item) => item.providerId === providerId) || {
+        providerId,
+        supportsAttachments: false,
+        attachmentMode: "unsupported",
+        readiness: "unknown"
+      }
+    })),
+    reason: capabilitiesResult?.reason || ""
+  };
+}
+
+async function bridgeOpenProvider(normalized, context) {
+  const providerIds = [normalized.providerId];
+  const entries = siteEntriesForProviderIds(providerIds);
+  let result = null;
+  try {
+    result = await openOrReuseWindows(entries, {
+      origin: context?.origin,
+      skipFocusChain: true
+    });
+  } catch (error) {
+    result = {
+      ok: false,
+      reason: String(error?.message || error || "open-provider-failed"),
+      targets: {}
+    };
+  }
+  return {
+    ok: result?.ok !== false,
+    bridgeVersion: AGENT_BRIDGE_VERSION,
+    action: normalized.action,
+    requestId: normalized.requestId,
+    providerId: normalized.providerId,
+    status: result?.ok === false ? "open-failed" : "provider-opened",
+    target: targetForProvider(result?.targets || {}, normalized.providerId),
+    reason: result?.reason || result?.error || ""
+  };
+}
+
+async function bridgeEnsureFreshConversation(normalized, context) {
+  const providerIds = [normalized.providerId];
+  const entries = siteEntriesForProviderIds(providerIds);
+  const startedAt = nowIso();
+  let result = null;
+  try {
+    result = await newChatOnTargets(providerIds, entries, context?.origin, null);
+  } catch (error) {
+    result = {
+      ok: false,
+      status: "new-chat-failed",
+      reason: String(error?.message || error || "new-chat-failed"),
+      outcomes: []
+    };
+  }
+  const completedAt = nowIso();
+  const outcome = outcomeForProvider(result, normalized.providerId) || {};
+  const ok = result?.ok !== false && outcome?.ok !== false;
+  return {
+    ok,
+    bridgeVersion: AGENT_BRIDGE_VERSION,
+    action: normalized.action,
+    requestId: normalized.requestId,
+    providerId: normalized.providerId,
+    status: ok ? "fresh-conversation-ready" : (outcome?.status || result?.status || "new-chat-failed"),
+    reason: outcome?.reason || outcome?.error || result?.reason || result?.error || "",
+    evidence: {
+      startedAt,
+      completedAt,
+      providerStatus: outcome?.status || result?.status || "",
+      navigatedUrl: outcome?.navigatedUrl || ""
+    }
+  };
+}
+
+async function bridgeSendPrompt(normalized, context) {
+  const providerIds = [normalized.providerId];
+  const entries = siteEntriesForProviderIds(providerIds);
+  let result = null;
+  try {
+    result = await sendPromptToTargets(
+      providerIds,
+      normalized.prompt,
+      normalized.requestId,
+      entries,
+      [],
+      context?.origin,
+      null,
+      { historyMode: "metadata-only", source: "agent-bridge-primitive" }
+    );
+  } catch (error) {
+    result = {
+      ok: false,
+      status: "send-failed",
+      reason: String(error?.message || error || "send-failed"),
+      outcomes: []
+    };
+  }
+  const outcome = outcomeForProvider(result, normalized.providerId) || {};
+  const ok = result?.ok !== false && outcome?.ok !== false;
+  return {
+    ok,
+    bridgeVersion: AGENT_BRIDGE_VERSION,
+    action: normalized.action,
+    requestId: normalized.requestId,
+    providerId: normalized.providerId,
+    status: outcome?.status || result?.status || (ok ? "send-submitted" : "send-failed"),
+    reason: outcome?.reason || outcome?.error || result?.reason || result?.error || "",
+    metadata: {
+      promptHash: stableHash(normalized.prompt),
+      promptLength: normalized.prompt.length,
+      submittedAt: nowIso(),
+      historyMode: "metadata-only"
+    }
+  };
+}
+
+async function bridgeCollectResponse(normalized, context) {
+  const providerIds = [normalized.providerId];
+  const entries = siteEntriesForProviderIds(providerIds);
+  let result = null;
+  try {
+    result = await collectLastFromTargets(providerIds, entries, context?.origin, null);
+  } catch (error) {
+    result = {
+      ok: false,
+      reason: String(error?.message || error || "collect-response-failed"),
+      sections: []
+    };
+  }
+  const section = (result?.sections || []).find((item) => String(item?.siteId || item?.providerId || "") === normalized.providerId) || {};
+  const text = String(section.text || "");
+  const status = section.status || (text ? "response-found" : "response-empty");
+  return {
+    ok: result?.ok !== false && status !== "transport-failed",
+    bridgeVersion: AGENT_BRIDGE_VERSION,
+    action: normalized.action,
+    requestId: normalized.requestId,
+    providerId: normalized.providerId,
+    status,
+    text,
+    reason: section.reason || section.error || result?.reason || result?.error || "",
+    metadata: {
+      answerHash: text ? stableHash(text) : "",
+      answerLength: text.length,
+      collectedAt: nowIso(),
+      historyMode: "metadata-only"
+    }
+  };
+}
+
+async function bridgeGetProviderStatus(normalized) {
+  const targets = await loadTargets();
+  const providerIds = [normalized.providerId];
+  const entries = siteEntriesForProviderIds(providerIds);
+  let capabilitiesResult = null;
+  try {
+    capabilitiesResult = await getCapabilitiesForTargets(providerIds, entries);
+  } catch (error) {
+    capabilitiesResult = {
+      ok: false,
+      reason: String(error?.message || error || "capabilities-unavailable"),
+      capabilities: []
+    };
+  }
+  const capability = normalizeCapabilitiesResult(providerIds, capabilitiesResult)[0];
+  return {
+    ok: capabilitiesResult?.ok !== false,
+    bridgeVersion: AGENT_BRIDGE_VERSION,
+    action: normalized.action,
+    requestId: normalized.requestId,
+    providerId: normalized.providerId,
+    status: targets?.[normalized.providerId]?.tabId ? "bound" : "unbound",
+    target: targetForProvider(targets, normalized.providerId),
+    capability,
+    generation: {
+      status: "unknown",
+      reason: "generation-state-not-exposed"
+    },
+    reason: capabilitiesResult?.reason || ""
   };
 }
 
@@ -849,6 +1136,12 @@ async function handleAgentBridgeRequest(rawPayload, context = {}) {
   await hydrateAgentBridgeRuns();
   if (normalized.action === "health") return bridgeHealth(normalized);
   if (normalized.action === "getCapabilities") return bridgeGetCapabilities(normalized);
+  if (normalized.action === "listProviders") return bridgeListProviders(normalized);
+  if (normalized.action === "openProvider") return bridgeOpenProvider(normalized, context);
+  if (normalized.action === "ensureFreshConversation") return bridgeEnsureFreshConversation(normalized, context);
+  if (normalized.action === "sendPrompt") return bridgeSendPrompt(normalized, context);
+  if (normalized.action === "collectResponse") return bridgeCollectResponse(normalized, context);
+  if (normalized.action === "getProviderStatus") return bridgeGetProviderStatus(normalized);
   if (normalized.action === "openOrBindTargets") return bridgeOpenOrBindTargets(normalized, context);
   if (normalized.action === "sendAll") return bridgeSendAll(normalized, context);
   if (normalized.action === "collectAll") return bridgeCollectAll(normalized, context);

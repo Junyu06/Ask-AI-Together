@@ -45,6 +45,11 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   let newChatCount = 0;
   let openCount = 0;
   let callSequence = [];
+  let lastCapabilitySiteIds = null;
+  let lastOpenSites = null;
+  let lastNewChatSiteIds = null;
+  let lastSendArgs = null;
+  let lastCollectSiteIds = null;
   let scenario = {
     baseline: { status: "response-found", text: "old answer" },
     collect: { status: "response-found", text: "new answer" },
@@ -111,6 +116,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
       };
     },
     async getCapabilitiesForTargets(siteIds) {
+      lastCapabilitySiteIds = Array.from(siteIds);
       return {
         ok: true,
         capabilities: siteIds.map((siteId) => ({
@@ -122,6 +128,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     },
     async openOrReuseWindows(sites) {
       openCount += 1;
+      lastOpenSites = Array.from(sites, (site) => ({ ...site }));
       callSequence.push("open");
       return {
         ok: true,
@@ -133,6 +140,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     },
     async newChatOnTargets(siteIds) {
       newChatCount += 1;
+      lastNewChatSiteIds = Array.from(siteIds);
       callSequence.push("newChat");
       if (scenario.newChat?.throw) throw new Error(scenario.newChat.reason || "unit-new-chat-failed");
       if (scenario.newChat?.hang) return new Promise(() => {});
@@ -157,6 +165,16 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     },
     async sendPromptToTargets(siteIds, message, requestId, sites, files, origin, targetHints, actionContext) {
       sendCount += 1;
+      lastSendArgs = {
+        siteIds: Array.from(siteIds),
+        message,
+        requestId,
+        sites: Array.from(sites, (site) => ({ ...site })),
+        files: Array.from(files),
+        origin,
+        targetHints,
+        actionContext: { ...actionContext }
+      };
       callSequence.push("send");
       assert.equal(actionContext.historyMode, "metadata-only");
       const failed = scenario.send?.failed === true;
@@ -175,6 +193,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     },
     async collectLastFromTargets(siteIds) {
       collectCount += 1;
+      lastCollectSiteIds = Array.from(siteIds);
       const config = Array.isArray(scenario.collectQueue) && scenario.collectQueue.length
         ? scenario.collectQueue.shift()
         : collectCount === 1 ? scenario.baseline : scenario.collect;
@@ -196,9 +215,13 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "unknown" })).ok, false);
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", unexpected: true })).reason, "unknown-field");
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", providerIds: ["deepseek"] })).reason, "unknown-provider");
+  assert.equal((await bridge.handleAgentBridgeRequest({ action: "sendPrompt", providerId: "deepseek", prompt: "x" })).reason, "unknown-provider");
   assert.match((await bridge.handleAgentBridgeRequest({ action: "health", options: { selector: "x" } })).reason, /forbidden-field/);
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", options: { surprise: true } })).reason, "unknown-option-field");
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", options: { newChatBeforeSend: "false" } })).reason, "invalid-option-field");
+  assert.equal((await bridge.handleAgentBridgeRequest({ action: "sendPrompt", prompt: "x" })).reason, "providerId-required");
+  assert.equal((await bridge.handleAgentBridgeRequest({ action: "sendPrompt", providerId: "chatgpt" })).reason, "prompt-required");
+  assert.match((await bridge.handleAgentBridgeRequest({ action: "sendPrompt", providerId: "chatgpt", prompt: "x", options: { rawTranscript: "nope" } })).reason, /forbidden-field/);
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "sendAll", providerIds: ["chatgpt"], prompt: "x", files: [] })).reason, "unknown-field");
   assert.equal(
     (await bridge.handleAgentBridgeRequest(
@@ -224,11 +247,99 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
 
   const health = await bridge.handleAgentBridgeRequest({ action: "health", requestId: "req-health" });
   assert.equal(health.ok, true);
+  assert.equal(health.connectionLayer, true);
+  assert.ok(health.primitiveActions.includes("sendPrompt"));
+  assert.ok(health.primitiveActions.includes("collectResponse"));
+  assert.ok(health.compatibilityActions.includes("sendAll"));
+  assert.ok(health.deprecatedPipelineActions.includes("collectAll"));
   assert.deepEqual(Array.from(health.providerAllowlist), ["chatgpt", "grok", "gemini", "claude"]);
 
   const capabilities = await bridge.handleAgentBridgeRequest({ action: "getCapabilities", providerIds: ["chatgpt", "claude"] });
   assert.equal(capabilities.ok, true);
+  assert.equal(capabilities.connectionLayer, true);
+  assert.ok(capabilities.primitiveActions.includes("openProvider"));
+  assert.ok(capabilities.deprecatedActions.includes("getRunState"));
   assert.equal(capabilities.capabilities.length, 2);
+
+  bridge._test.resetAgentBridgeStateForTest();
+  sendCount = 0;
+  collectCount = 0;
+  newChatCount = 0;
+  openCount = 0;
+  callSequence = [];
+  lastCapabilitySiteIds = null;
+  lastOpenSites = null;
+  lastNewChatSiteIds = null;
+  lastSendArgs = null;
+  lastCollectSiteIds = null;
+  scenario = {
+    collectQueue: [{ status: "response-found", text: "primitive answer" }],
+    baseline: { status: "response-found", text: "old answer" },
+    collect: { status: "response-found", text: "primitive answer" },
+    newChat: {},
+    send: {},
+    fastTimers: true
+  };
+  const primitiveSessionSetCountBefore = sessionSetCount;
+  assert.equal(Object.prototype.hasOwnProperty.call(sessionStore, "oa_agent_bridge_runs_v1"), false);
+
+  const providers = await bridge.handleAgentBridgeRequest({ action: "listProviders", providerIds: ["chatgpt", "claude"] });
+  assert.equal(providers.ok, true);
+  assert.equal(providers.connectionLayer, true);
+  assert.deepEqual(lastCapabilitySiteIds, ["chatgpt", "claude"]);
+  assert.deepEqual(Array.from(providers.providers, (provider) => provider.providerId), ["chatgpt", "claude"]);
+  assert.equal(providers.providers[0].target.bound, true);
+
+  const opened = await bridge.handleAgentBridgeRequest({ action: "openProvider", providerId: "gemini", requestId: "req-open-primitive" });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.providerId, "gemini");
+  assert.equal(opened.target.tabId, 11);
+  assert.deepEqual(lastOpenSites, [{ siteId: "gemini", url: "https://gemini.google.com/" }]);
+
+  const fresh = await bridge.handleAgentBridgeRequest({ action: "ensureFreshConversation", providerId: "claude", requestId: "req-fresh-primitive" });
+  assert.equal(fresh.ok, true);
+  assert.equal(fresh.providerId, "claude");
+  assert.equal(fresh.status, "fresh-conversation-ready");
+  assert.equal(typeof fresh.evidence.completedAt, "string");
+  assert.deepEqual(lastNewChatSiteIds, ["claude"]);
+
+  const sentPrimitive = await bridge.handleAgentBridgeRequest({
+    action: "sendPrompt",
+    providerId: "chatgpt",
+    requestId: "req-send-primitive",
+    prompt: "primitive question"
+  });
+  assert.equal(sentPrimitive.ok, true);
+  assert.equal(sentPrimitive.providerId, "chatgpt");
+  assert.equal(sentPrimitive.status, "send-submitted");
+  assert.equal(sentPrimitive.metadata.historyMode, "metadata-only");
+  assert.deepEqual(lastSendArgs.siteIds, ["chatgpt"]);
+  assert.equal(lastSendArgs.message, "primitive question");
+  assert.equal(lastSendArgs.actionContext.source, "agent-bridge-primitive");
+  assert.deepEqual(lastSendArgs.files, []);
+
+  const collectedPrimitive = await bridge.handleAgentBridgeRequest({
+    action: "collectResponse",
+    providerId: "chatgpt",
+    requestId: "req-collect-primitive"
+  });
+  assert.equal(collectedPrimitive.ok, true);
+  assert.equal(collectedPrimitive.providerId, "chatgpt");
+  assert.equal(collectedPrimitive.text, "primitive answer");
+  assert.equal(collectedPrimitive.metadata.answerLength, "primitive answer".length);
+  assert.deepEqual(lastCollectSiteIds, ["chatgpt"]);
+
+  const providerStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(providerStatus.ok, true);
+  assert.equal(providerStatus.status, "bound");
+  assert.equal(providerStatus.target.tabId, 11);
+  assert.equal(providerStatus.generation.status, "unknown");
+  assert.equal(sessionSetCount, primitiveSessionSetCountBefore, "primitive actions must not write chrome.storage.session");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(sessionStore, "oa_agent_bridge_runs_v1"),
+    false,
+    "primitive actions must not create legacy run storage"
+  );
 
   bridge._test.resetAgentBridgeStateForTest();
   sendCount = 0;
