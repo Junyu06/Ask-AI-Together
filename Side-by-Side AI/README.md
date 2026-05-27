@@ -49,6 +49,7 @@
 | `background/bg-switcher.js` | `chrome.action.onClicked`、`openSwitcherFromToolbarAction`（先尝试页内嵌侧栏消息，再 `openSelectedAisTiled`）、`loadOrderedSelectedSitesFromStorage`、`focusOpenedTargetsThenSwitcher`。 |
 | `background/bg-tiling.js` | 工作区矩形计算、`ensureWindowForSite`、`openOrReuseWindows`、`applyTile`、`broadcastToExtensionPages`。 |
 | `background/bg-actions.js` | `focusTarget`、`appendHistoryAfterSend`、`sendPromptToTargets`、`collectLastFromTargets`、`newChatOnTargets`、`restoreHistoryUrlsToTargets`、`getState`。 |
+| `background/bg-agent-bridge.js` | 受信任扩展页面专用 agent bridge：暴露 allowlisted primitive actions（`health` / `listProviders` / `openProvider` / `ensureFreshConversation` / `sendPrompt` / `collectResponse` / `getProviderStatus`），并保留旧 compatibility actions 仅作兼容，不作为 Hermes 正常路径。 |
 
 **消息类型（节选）**：自 content 经 background 转发 `OA_SEND_PROGRESS`、`OA_UPDATE_HISTORY`、`OA_QUOTE_TEXT`；自 UI（选项页）发往 background：`OA_BG_*`（详见 `background/background.js` 内分支）。
 
@@ -92,6 +93,8 @@
 | `ui/options/options.html` + `options.js` + `options.css` | 广播提示词、发送历史、快速聚焦、站点勾选与平铺操作（Chrome 扩展详情 →「扩展程序选项」或右键图标 →「选项」）。 |
 | `ui/controller/controller.css` | 选项页内站点列表与工具条的共用样式。 |
 
+`shared/agent-bridge.js` 由 `legacy/index.html` 和 `ui/options/options.html` 作为扩展页面脚本加载，不注入第三方 AI 网页。它把受信任扩展页面上的 agent request 转发给 background 的 `bg-agent-bridge.js`。
+
 ---
 
 ## 共享资源（`assets/`）
@@ -115,4 +118,13 @@
 - 加载未打包扩展：Chrome → 扩展程序 → 开发者模式 →「加载已解压的扩展程序」→ 选择本目录（`Side-by-Side AI`）。
 - 改 `manifest.json`、service worker 或 content script 列表后需 **重新加载扩展**。
 - 打包：在仓库根目录运行 `scripts/package-extension.sh`，输出 `dist/side-by-side-ai-v<manifest version>.zip`。
-- 关键回归检查：运行相关 `scripts/validate-*.js` 后，reload unpacked extension，并在 Chrome 中做同一用户路径 live smoke。
+- 关键回归检查：运行相关 `scripts/validate-*.js` 后，reload unpacked extension，并在 Chrome 中做同一用户路径 live smoke。修改 agent bridge 时至少运行 `node scripts/validate-agent-bridge.js`，并确认 primitive actions 不写 `oa_agent_bridge_runs_v1` legacy run storage。
+
+## Agent Bridge 边界
+
+`agent-bridge` 是给受信任扩展页面和外部 agent helper 使用的连接层，不是新的产品脑。
+
+- primitive actions 只做单步连接：打开/绑定 provider、确保新会话、发送 prompt、回收回复、查状态。
+- 上层 agent 负责判断何时调用、发送什么 prompt、隐私过滤、重试/停止策略和最终综合。
+- compatibility actions（如 `sendAll` / `collectAll`）只为旧调试或兼容保留，不应成为 Hermes `external-ai-research` 的正常路径。
+- bridge 不应保存原始外部 AI 回答为长期记忆；primitive path 只保留最小 metadata。

@@ -88,7 +88,7 @@ Load unpacked for local development:
 - `Side-by-Side AI/legacy/`: default split-pane workspace
 - `Side-by-Side AI/background/`: service worker modules for tab/window routing, tiling, history, and action dispatch
 - `Side-by-Side AI/content/`: content-script runtime for input, send, response extraction, attachments, and quote UI
-- `Side-by-Side AI/shared/`: provider catalog, runtime contract, text formatting, history service, and shared helpers
+- `Side-by-Side AI/shared/`: provider catalog, runtime contract, text formatting, history service, optional trusted agent bridge, and shared helpers
 - `Side-by-Side AI/embed/`: in-page Compatibility Mode dock bootstrap
 - `Side-by-Side AI/ui/options/`: options / Compatibility Mode controller UI
 - `scripts/package-extension.sh`: creates `dist/side-by-side-ai-v<manifest version>.zip`

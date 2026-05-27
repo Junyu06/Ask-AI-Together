@@ -70,13 +70,22 @@ Default selected providers are ChatGPT, Claude, and Gemini.
 - Quote button rendering is shared through `shared/quote-helper.js`.
 - Legacy and Compatibility keep separate transport paths.
 
+### Agent Bridge
+
+- `shared/agent-bridge.js` is loaded only by trusted extension pages (`legacy/index.html` and `ui/options/options.html`), not by third-party AI pages.
+- `background/bg-agent-bridge.js` exposes a bounded bridge for external agent helpers that can already reach the extension page.
+- Primitive actions are the supported agent-facing path: `health`, `listProviders`, `openProvider`, `ensureFreshConversation`, `sendPrompt`, `collectResponse`, and `getProviderStatus`.
+- Compatibility actions such as `sendAll`, `collectAll`, `getRunState`, and `cancelRun` remain for old compatibility/debug flows, but should not be used as the normal Hermes `external-ai-research` path.
+- Primitive actions are intentionally not an end-to-end product brain: the external agent owns privacy filtering, sequencing, stopping, and final answer synthesis.
+- Primitive sends use `source: "agent-bridge-primitive"` and must not create legacy `oa_agent_bridge_runs_v1` run storage.
+
 ## Runtime Layers
 
 | Layer | Files | Responsibility |
 |---|---|---|
 | Manifest | `manifest.json` | MV3 permissions, content script load order, web accessible resources |
 | Background | `background/` | service worker routing, target registry, tiling, history mutation queue |
-| Shared | `shared/` | provider catalog, runtime contract, text formatting, history, quote helper |
+| Shared | `shared/` | provider catalog, runtime contract, text formatting, history, quote helper, trusted extension-page agent bridge |
 | Content runtime | `content/` | DOM querying, input injection, response extraction, attachments, send/new-chat runtime |
 | Legacy shell | `legacy/` | default iframe split-pane UI and iframe `postMessage` adapter |
 | Compatibility shell | `ui/options/`, `embed/` | options/controller UI, in-page dock, top-level tab/window control |
@@ -105,6 +114,7 @@ Use targeted validators under `scripts/validate-*.js`. Important regression chec
 - `validate-legacy-shared-runtime-routing.js`
 - `validate-slice5-quote-cleanup.js`
 - `validate-gemini-attachment-main-world.js`
+- `validate-agent-bridge.js`
 
 For user-visible Chrome extension bugs, local validators are not enough. Reload the unpacked extension in Chrome, reopen the relevant extension/provider pages, then run the same user-path live smoke.
 

@@ -76,7 +76,7 @@
 - `Side-by-Side AI/legacy/`：默认分屏工作区
 - `Side-by-Side AI/background/`：service worker 模块，负责 tab/window 路由、平铺、历史和动作分发
 - `Side-by-Side AI/content/`：content-script runtime，负责输入、发送、回复提取、附件和引用 UI
-- `Side-by-Side AI/shared/`：provider catalog、runtime contract、文本格式化、history service 和共享 helper
+- `Side-by-Side AI/shared/`：provider catalog、runtime contract、文本格式化、history service、可选 trusted agent bridge 和共享 helper
 - `Side-by-Side AI/embed/`：网页内 Compatibility Mode dock 启动脚本
 - `Side-by-Side AI/ui/options/`：选项页 / Compatibility Mode 控制界面
 - `scripts/package-extension.sh`：生成 `dist/side-by-side-ai-v<manifest version>.zip`
