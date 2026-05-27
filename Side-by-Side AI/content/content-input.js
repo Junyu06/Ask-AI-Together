@@ -105,15 +105,33 @@ function setContentEditableValue(el, text, siteId = "") {
   return true;
 }
 
-function clickSend(site, inputEl) {
-  const btn = findFirst(site.sendSelectors);
-  if (btn) {
-    const ariaDisabled = String(btn.getAttribute("aria-disabled") || "").toLowerCase() === "true";
-    if (!btn.disabled && !ariaDisabled) {
-      btn.click();
-      return true;
-    }
+function isEnabledSendControl(el) {
+  if (!el || !isVisible(el)) return false;
+  const ariaDisabled = String(el.getAttribute?.("aria-disabled") || "").toLowerCase() === "true";
+  const disabledAttr = typeof el.getAttribute === "function" && el.getAttribute("disabled") !== null;
+  return !el.disabled && !ariaDisabled && !disabledAttr;
+}
+
+function findSendControl(site) {
+  const selectors = Array.isArray(site?.sendSelectors) ? site.sendSelectors : [];
+  return queryDeepAll(selectors).find(isEnabledSendControl) || null;
+}
+
+function clickSendControl(el) {
+  if (!el) return false;
+  el.focus?.();
+  if (typeof MouseEvent === "function") {
+    ["pointerdown", "mousedown", "pointerup", "mouseup"].forEach((eventType) => {
+      el.dispatchEvent(new MouseEvent(eventType, { bubbles: true, cancelable: true, view: window }));
+    });
   }
+  el.click();
+  return true;
+}
+
+function clickSend(site, inputEl) {
+  const btn = findSendControl(site);
+  if (clickSendControl(btn)) return true;
 
   if (!inputEl) return false;
   ["keydown", "keypress", "keyup"].forEach((eventType) => {

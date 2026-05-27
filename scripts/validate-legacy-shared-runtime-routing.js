@@ -249,6 +249,27 @@ function setClaudePage(document) {
   document.appendChild(el(document, "main", {}, "", {}, [userHeading, userText, responseHeading, response, actions, input]));
 }
 
+function setGeminiPage(document) {
+  document.children = [];
+  const input = el(document, "div", { class: "ql-editor", contenteditable: "true" }, "", { top: 100, bottom: 130 });
+  const staleSubmit = el(
+    document,
+    "button",
+    { class: "submit", "aria-disabled": "true" },
+    "old disabled submit",
+    { top: 150, bottom: 170 }
+  );
+  const sendButton = el(
+    document,
+    "button",
+    { "aria-label": "傳送訊息" },
+    "傳送",
+    { top: 150, bottom: 170 }
+  );
+  document.appendChild(el(document, "main", {}, "", {}, [input, staleSubmit, sendButton]));
+  return { input, staleSubmit, sendButton };
+}
+
 function setHost(context, hostname) {
   context.location.hostname = hostname;
   context.location.href = `https://${hostname}/`;
@@ -280,6 +301,9 @@ function matchesSimpleSelector(node, selector) {
   if (!selector || !node?.localName) return false;
   if (selector.startsWith("#")) return node.id === selector.slice(1);
   if (selector.startsWith(".")) return node.classList.has(selector.slice(1));
+
+  const tagClass = selector.match(/^([a-z0-9-]+)\.([A-Za-z0-9_-]+)$/i);
+  if (tagClass) return node.localName === tagClass[1].toLowerCase() && node.classList.has(tagClass[2]);
 
   const attrOnly = selector.match(/^\[([^\]=*]+)(\*=|=)?(?:"([^"]*)"|'([^']*)'|([^\]\s]+))?(?:\s+i)?\]$/);
   if (attrOnly) return matchesAttribute(node, attrOnly[1], attrOnly[2], attrOnly[3] ?? attrOnly[4] ?? attrOnly[5] ?? "");
@@ -529,6 +553,19 @@ async function flushPromises() {
   assert.equal(claudeResponse?.payload?.siteId, "claude");
   assert.equal(claudeResponse?.payload?.text, "Claude latest visible reply");
   assert.equal(claudeResponse?.payload?.status, "response-found");
+
+  setHost(context, "chatgpt.com");
+  setPage(context.document);
+
+  setHost(context, "gemini.google.com");
+  const gemini = setGeminiPage(context.document);
+  const geminiSendOutcome = await sharedTransport.sendPrompt(["gemini"], "hello gemini primitive", {
+    requestId: "send-gemini"
+  });
+  assert.equal(geminiSendOutcome.status, "send-submitted");
+  assert.equal(gemini.staleSubmit.clicked, 0, "Gemini send should skip stale disabled submit controls");
+  assert.equal(gemini.sendButton.clicked, 1, "Gemini send should click the enabled Chinese aria-label send button");
+  assert.equal(gemini.input.textContent, "hello gemini primitive");
 
   setHost(context, "chatgpt.com");
   setPage(context.document);
