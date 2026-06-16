@@ -675,12 +675,13 @@ function targetForProvider(targets, providerId) {
 }
 
 function isAgentBridgePlaceholderResponse(text) {
-  const normalized = String(text || "")
+  const rawText = String(text || "").trim();
+  const normalized = rawText
     .trim()
     .replace(/[.。…]+$/g, "")
     .trim()
     .toLowerCase();
-  return [
+  if ([
     "thinking",
     "loading",
     "generating",
@@ -688,7 +689,15 @@ function isAgentBridgePlaceholderResponse(text) {
     "正在思考",
     "生成中",
     "正在生成"
-  ].includes(normalized);
+  ].includes(normalized)) {
+    return true;
+  }
+
+  if (normalized.length > 180) return false;
+  return [
+    /^(i('|’)?ll|i will|i would|i can|i('|’)?m going to|i am going to|let me)\b.{0,140}\b(check|verify|look up|search|confirm|review)\b/i,
+    /^(我会|我将|我来|我先|先|让我|稍等|等我|我可以).{0,140}(查|搜索|检索|核对|确认|验证|看一下|看看|找|公开|不按记忆)/i
+  ].some((pattern) => pattern.test(normalized));
 }
 
 function allowedProviderIds(providerIds) {
