@@ -46,6 +46,7 @@ const AGENT_BRIDGE_OPTION_FIELDS = new Set(["timeoutMs", "deadlineMs", "poll", "
 const AGENT_BRIDGE_NEW_CHAT_TIMEOUT_MS = 5000;
 const AGENT_BRIDGE_NEW_CHAT_DEFAULT_SETTLE_MS = 2000;
 const AGENT_BRIDGE_NEW_CHAT_MAX_SETTLE_MS = 5000;
+const AGENT_BRIDGE_COLLECT_POLL_INTERVAL_MS = 2000;
 const AGENT_BRIDGE_FORBIDDEN_KEYS = new Set([
   "attachment",
   "attachments",
@@ -91,6 +92,10 @@ function stableHash(value) {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return `fnv1a32:${hash.toString(16).padStart(8, "0")}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isPlainObject(value) {
@@ -183,6 +188,21 @@ function validateAgentBridgePayload(rawPayload) {
     }
     if (options.newChatBeforeSend != null && typeof options.newChatBeforeSend !== "boolean") {
       return failClosed("invalid-option-field", { field: "options.newChatBeforeSend" });
+    }
+    if (options.poll != null && typeof options.poll !== "boolean") {
+      return failClosed("invalid-option-field", { field: "options.poll" });
+    }
+    if (options.timeoutMs != null) {
+      const timeoutMs = Number(options.timeoutMs);
+      if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+        return failClosed("invalid-option-field", { field: "options.timeoutMs" });
+      }
+    }
+    if (options.deadlineMs != null) {
+      const deadlineMs = Number(options.deadlineMs);
+      if (!Number.isFinite(deadlineMs) || deadlineMs < 0) {
+        return failClosed("invalid-option-field", { field: "options.deadlineMs" });
+      }
     }
     if (options.newChatSettleMs != null) {
       const settleMs = Number(options.newChatSettleMs);
@@ -883,19 +903,34 @@ async function bridgeSendPrompt(normalized, context) {
 async function bridgeCollectResponse(normalized, context) {
   const providerIds = [normalized.providerId];
   const entries = siteEntriesForProviderIds(providerIds);
+  const poll = normalized.options?.poll === true;
+  const timeoutMs = Math.max(0, Number(normalized.options?.timeoutMs || normalized.options?.deadlineMs || 0));
+  const startedAtMs = Date.now();
+  const deadlineAtMs = startedAtMs + timeoutMs;
+  let attemptCount = 0;
   let result = null;
-  try {
-    result = await collectLastFromTargets(providerIds, entries, context?.origin, null);
-  } catch (error) {
-    result = {
-      ok: false,
-      reason: String(error?.message || error || "collect-response-failed"),
-      sections: []
-    };
-  }
-  const section = (result?.sections || []).find((item) => String(item?.siteId || item?.providerId || "") === normalized.providerId) || {};
+  let section = {};
+  let status = "response-empty";
+  do {
+    attemptCount += 1;
+    try {
+      result = await collectLastFromTargets(providerIds, entries, context?.origin, null);
+    } catch (error) {
+      result = {
+        ok: false,
+        reason: String(error?.message || error || "collect-response-failed"),
+        sections: []
+      };
+    }
+    section = (result?.sections || []).find((item) => String(item?.siteId || item?.providerId || "") === normalized.providerId) || {};
+    const text = String(section.text || "");
+    status = section.status || (text ? "response-found" : "response-empty");
+    if (!poll || status === "response-found" || status === "transport-failed") break;
+    if (Date.now() >= deadlineAtMs) break;
+    await sleep(Math.min(AGENT_BRIDGE_COLLECT_POLL_INTERVAL_MS, Math.max(0, deadlineAtMs - Date.now())));
+  } while (true);
   const text = String(section.text || "");
-  const status = section.status || (text ? "response-found" : "response-empty");
+  const timedOut = poll && status === "response-empty" && timeoutMs > 0 && Date.now() >= deadlineAtMs;
   return {
     ok: result?.ok !== false && status !== "transport-failed",
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -904,11 +939,15 @@ async function bridgeCollectResponse(normalized, context) {
     providerId: normalized.providerId,
     status,
     text,
-    reason: section.reason || section.error || result?.reason || result?.error || "",
+    reason: section.reason || section.error || result?.reason || result?.error || (timedOut ? "response-timeout" : ""),
     metadata: {
       answerHash: text ? stableHash(text) : "",
       answerLength: text.length,
       collectedAt: nowIso(),
+      collectStartedAt: new Date(startedAtMs).toISOString(),
+      attempts: attemptCount,
+      poll,
+      timedOut,
       historyMode: "metadata-only"
     }
   };
