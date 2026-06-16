@@ -72,6 +72,8 @@ const AGENT_BRIDGE_FORBIDDEN_KEYS = new Set([
 ]);
 const AGENT_BRIDGE_RUNS_STORAGE = "oa_agent_bridge_runs_v1";
 const AGENT_BRIDGE_RUN_LIMIT = 50;
+const STORAGE_SELECTED_SITES = "oa_selected_sites";
+const DEFAULT_SELECTED_PROVIDER_IDS = Object.freeze(["chatgpt", "claude", "gemini"]);
 
 const agentBridgeRuns = new Map();
 const agentBridgeIdempotencyIndex = new Map();
@@ -652,8 +654,45 @@ function targetForProvider(targets, providerId) {
   };
 }
 
+function allowedProviderIds(providerIds) {
+  const seen = new Set();
+  const result = [];
+  for (const providerId of providerIds || []) {
+    const normalized = String(providerId || "").trim();
+    if (!normalized || seen.has(normalized)) continue;
+    if (!AGENT_BRIDGE_PROVIDER_ALLOWLIST.includes(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+async function loadEnabledProviderIds() {
+  let selected = [];
+  try {
+    if (chrome.storage?.local?.get) {
+      const data = await chrome.storage.local.get([STORAGE_SELECTED_SITES]);
+      selected = Array.isArray(data?.[STORAGE_SELECTED_SITES]) ? data[STORAGE_SELECTED_SITES] : [];
+    }
+  } catch (_error) {
+    selected = [];
+  }
+  const providerIds = allowedProviderIds(selected);
+  return providerIds.length ? providerIds : DEFAULT_SELECTED_PROVIDER_IDS.slice();
+}
+
+function providerConfigPayload(enabledProviderIds) {
+  return {
+    enabledProviderIds: enabledProviderIds.slice(),
+    selectedSitesStorageKey: STORAGE_SELECTED_SITES,
+    defaultEnabledProviderIds: DEFAULT_SELECTED_PROVIDER_IDS.slice(),
+    allowlistEnforced: true
+  };
+}
+
 async function bridgeHealth(normalized) {
   const targets = await loadTargets();
+  const enabledProviderIds = await loadEnabledProviderIds();
   const manifest = chrome.runtime.getManifest();
   const lastRun = Array.from(agentBridgeRuns.values()).at(-1) || null;
   return {
@@ -667,6 +706,8 @@ async function bridgeHealth(normalized) {
       name: manifest?.name || ""
     },
     providerAllowlist: AGENT_BRIDGE_PROVIDER_ALLOWLIST.slice(),
+    enabledProviderIds,
+    providerConfig: providerConfigPayload(enabledProviderIds),
     ...bridgeActionMetadata(),
     targetTabs: AGENT_BRIDGE_PROVIDER_ALLOWLIST.map((providerId) => ({
       providerId,
@@ -696,6 +737,7 @@ async function bridgeGetCapabilities(normalized) {
 
 async function bridgeListProviders(normalized) {
   const providerIds = primitiveProviderIds(normalized);
+  const enabledProviderIds = await loadEnabledProviderIds();
   const entries = siteEntriesForProviderIds(providerIds);
   const targets = await loadTargets();
   let capabilitiesResult = null;
@@ -716,6 +758,8 @@ async function bridgeListProviders(normalized) {
     requestId: normalized.requestId,
     ...bridgeActionMetadata(),
     providerAllowlist: AGENT_BRIDGE_PROVIDER_ALLOWLIST.slice(),
+    enabledProviderIds,
+    providerConfig: providerConfigPayload(enabledProviderIds),
     providers: providerIds.map((providerId) => ({
       providerId,
       allowlisted: true,

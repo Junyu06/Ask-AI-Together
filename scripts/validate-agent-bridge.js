@@ -59,6 +59,9 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   const nativeSetTimeout = setTimeout;
   const nativeClearTimeout = clearTimeout;
   const sessionStore = {};
+  const localStore = {
+    oa_selected_sites: ["gemini", "not-allowlisted", "chatgpt", "gemini"]
+  };
   let sessionSetCount = 0;
   function sectionFor(siteId, config, fallbackText) {
     const text = "text" in (config || {}) ? String(config.text || "") : fallbackText;
@@ -98,6 +101,17 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
         }
       },
       storage: {
+        local: {
+          async get(key) {
+            if (typeof key === "string") return { [key]: localStore[key] };
+            if (Array.isArray(key)) {
+              const result = {};
+              for (const item of key) result[item] = localStore[item];
+              return result;
+            }
+            return JSON.parse(JSON.stringify(localStore));
+          }
+        },
         session: {
           async get(key) {
             if (typeof key === "string") return { [key]: sessionStore[key] };
@@ -253,6 +267,10 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.ok(health.compatibilityActions.includes("sendAll"));
   assert.ok(health.deprecatedPipelineActions.includes("collectAll"));
   assert.deepEqual(Array.from(health.providerAllowlist), ["chatgpt", "grok", "gemini", "claude"]);
+  assert.deepEqual(Array.from(health.enabledProviderIds), ["gemini", "chatgpt"]);
+  assert.deepEqual(Array.from(health.providerConfig.enabledProviderIds), ["gemini", "chatgpt"]);
+  assert.equal(health.providerConfig.selectedSitesStorageKey, "oa_selected_sites");
+  assert.equal(health.providerConfig.allowlistEnforced, true);
 
   const capabilities = await bridge.handleAgentBridgeRequest({ action: "getCapabilities", providerIds: ["chatgpt", "claude"] });
   assert.equal(capabilities.ok, true);
@@ -286,6 +304,8 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   const providers = await bridge.handleAgentBridgeRequest({ action: "listProviders", providerIds: ["chatgpt", "claude"] });
   assert.equal(providers.ok, true);
   assert.equal(providers.connectionLayer, true);
+  assert.deepEqual(Array.from(providers.enabledProviderIds), ["gemini", "chatgpt"]);
+  assert.deepEqual(Array.from(providers.providerConfig.enabledProviderIds), ["gemini", "chatgpt"]);
   assert.deepEqual(lastCapabilitySiteIds, ["chatgpt", "claude"]);
   assert.deepEqual(Array.from(providers.providers, (provider) => provider.providerId), ["chatgpt", "claude"]);
   assert.equal(providers.providers[0].target.bound, true);
