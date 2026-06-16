@@ -674,6 +674,23 @@ function targetForProvider(targets, providerId) {
   };
 }
 
+function isAgentBridgePlaceholderResponse(text) {
+  const normalized = String(text || "")
+    .trim()
+    .replace(/[.。…]+$/g, "")
+    .trim()
+    .toLowerCase();
+  return [
+    "thinking",
+    "loading",
+    "generating",
+    "思考中",
+    "正在思考",
+    "生成中",
+    "正在生成"
+  ].includes(normalized);
+}
+
 function allowedProviderIds(providerIds) {
   const seen = new Set();
   const result = [];
@@ -911,6 +928,7 @@ async function bridgeCollectResponse(normalized, context) {
   let result = null;
   let section = {};
   let status = "response-empty";
+  let placeholderSeen = false;
   do {
     attemptCount += 1;
     try {
@@ -925,11 +943,16 @@ async function bridgeCollectResponse(normalized, context) {
     section = (result?.sections || []).find((item) => String(item?.siteId || item?.providerId || "") === normalized.providerId) || {};
     const text = String(section.text || "");
     status = section.status || (text ? "response-found" : "response-empty");
+    if (status === "response-found" && isAgentBridgePlaceholderResponse(text)) {
+      placeholderSeen = true;
+      status = "response-empty";
+    }
     if (!poll || status === "response-found" || status === "transport-failed") break;
     if (Date.now() >= deadlineAtMs) break;
     await sleep(Math.min(AGENT_BRIDGE_COLLECT_POLL_INTERVAL_MS, Math.max(0, deadlineAtMs - Date.now())));
   } while (true);
-  const text = String(section.text || "");
+  const rawText = String(section.text || "");
+  const text = status === "response-found" && !isAgentBridgePlaceholderResponse(rawText) ? rawText : "";
   const timedOut = poll && status === "response-empty" && timeoutMs > 0 && Date.now() >= deadlineAtMs;
   return {
     ok: result?.ok !== false && status !== "transport-failed",
@@ -939,7 +962,7 @@ async function bridgeCollectResponse(normalized, context) {
     providerId: normalized.providerId,
     status,
     text,
-    reason: section.reason || section.error || result?.reason || result?.error || (timedOut ? "response-timeout" : ""),
+    reason: section.reason || section.error || result?.reason || result?.error || (timedOut ? "response-timeout" : placeholderSeen ? "placeholder-response" : ""),
     metadata: {
       answerHash: text ? stableHash(text) : "",
       answerLength: text.length,

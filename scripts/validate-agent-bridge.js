@@ -352,7 +352,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   collectCount = 0;
   callSequence = [];
   scenario.collectQueue = [
-    { label: "poll-empty-a", status: "response-empty", text: "" },
+    { label: "poll-thinking", status: "response-found", text: "Thinking" },
     { label: "poll-empty-b", status: "response-empty", text: "" },
     { label: "poll-found", status: "response-found", text: "polled primitive answer" }
   ];
@@ -368,7 +368,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(polledPrimitive.metadata.attempts, 3);
   assert.equal(polledPrimitive.metadata.poll, true);
   assert.equal(polledPrimitive.metadata.timedOut, false);
-  assert.deepEqual(callSequence, ["poll-empty-a", "poll-empty-b", "poll-found"]);
+  assert.deepEqual(callSequence, ["poll-thinking", "poll-empty-b", "poll-found"]);
 
   const providerStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
   assert.equal(providerStatus.ok, true);
