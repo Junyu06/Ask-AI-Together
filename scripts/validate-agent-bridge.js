@@ -355,6 +355,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     { label: "poll-thinking", status: "response-found", text: "Thinking" },
     { label: "poll-analyzing", status: "response-found", text: "Analyzing..." },
     { label: "poll-grok-timer", status: "response-found", text: "Comparing OpenAI API options for Pi companion • 4s" },
+    { label: "poll-grok-title", status: "response-found", text: "Evaluating OpenAI API options for feature" },
     {
       label: "poll-grok-search-status",
       status: "response-found",
@@ -374,13 +375,14 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(polledPrimitive.ok, true);
   assert.equal(polledPrimitive.status, "response-found");
   assert.equal(polledPrimitive.text, "polled primitive answer");
-  assert.equal(polledPrimitive.metadata.attempts, 8);
+  assert.equal(polledPrimitive.metadata.attempts, 9);
   assert.equal(polledPrimitive.metadata.poll, true);
   assert.equal(polledPrimitive.metadata.timedOut, false);
   assert.deepEqual(callSequence, [
     "poll-thinking",
     "poll-analyzing",
     "poll-grok-timer",
+    "poll-grok-title",
     "poll-grok-search-status",
     "poll-thinking-about",
     "poll-pending-ack",

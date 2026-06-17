@@ -84,6 +84,9 @@ function isGrokStatusLine(line) {
 function isGrokThinkingDisclosureLine(line) {
   const normalized = String(line || "").trim().replaceAll(/\s+/g, " ");
   if (!normalized || normalized.length > 260) return false;
+  if (normalized.length <= 100 && /^(Evaluating|Comparing|Researching|Searching|Reviewing|Checking|Looking|Assessing|Understanding)\b/i.test(normalized)) {
+    return true;
+  }
   return /^(Thought|Thinking|Reasoning|Reasoned|Analyzing)(?:\b|:)/i.test(normalized);
 }
 

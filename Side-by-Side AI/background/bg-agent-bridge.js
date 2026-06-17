@@ -698,6 +698,10 @@ function isAgentBridgePlaceholderResponse(text) {
     return true;
   }
 
+  if (/^(evaluating|comparing|researching|searching|reviewing|checking|looking|assessing|understanding)\b/i.test(normalized) && normalized.length <= 100) {
+    return true;
+  }
+
   if (/[•·]\s*\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes)$/i.test(normalized) && normalized.length <= 180) {
     return true;
   }
