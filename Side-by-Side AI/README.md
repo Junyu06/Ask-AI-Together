@@ -128,3 +128,5 @@
 - 上层 agent 负责判断何时调用、发送什么 prompt、隐私过滤、重试/停止策略和最终综合。
 - compatibility actions（如 `sendAll` / `collectAll`）只为旧调试或兼容保留，不应成为 Hermes `external-ai-research` 的正常路径。
 - bridge 不应保存原始外部 AI 回答为长期记忆；primitive path 只保留最小 metadata。
+- `collectResponse` 需要把 provider 的中间态当作不可计入结果处理，尤其是 Grok 的 thinking/analyzing/timer/search/browsed/title/短碎片状态；短回答要稳定后再返回给上层 agent。
+- provider 账号状态是外部依赖：额度用完、paywall、未登录或会员限制应作为 provider-level unavailable / failed 处理，不应直接判断为 bridge bug。

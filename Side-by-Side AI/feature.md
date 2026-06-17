@@ -78,6 +78,8 @@ Default selected providers are ChatGPT, Claude, and Gemini.
 - Compatibility actions such as `sendAll`, `collectAll`, `getRunState`, and `cancelRun` remain for old compatibility/debug flows, but should not be used as the normal Hermes `external-ai-research` path.
 - Primitive actions are intentionally not an end-to-end product brain: the external agent owns privacy filtering, sequencing, stopping, and final answer synthesis.
 - Primitive sends use `source: "agent-bridge-primitive"` and must not create legacy `oa_agent_bridge_runs_v1` run storage.
+- `collectResponse` must filter provider progress placeholders instead of treating them as final answers. Grok is the known high-risk case: thinking/analyzing labels, timers, searched/browsed status blocks, short titles, and short fragments should remain pending until a stable answer appears.
+- Provider account limits are outside the bridge. Quota exhaustion, paywalls, logged-out state, or membership restrictions should surface as provider-level unavailable/failed status, not as proof that the bridge itself is broken.
 
 ## Runtime Layers
 
