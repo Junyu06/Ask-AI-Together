@@ -255,6 +255,19 @@ setPage(
   el("main", {}, "", {}, [
     el("textarea", { "aria-label": "Ask" }, "", { top: 90, bottom: 110 }),
     el("div", { "data-testid": "assistant-message" }, "", { top: 20, bottom: 40 }, [
+      el("div", { class: "prose" }, "Browsed\ndevelopers.openai.com/api/reference/responses/overview/", { top: 20, bottom: 40 })
+    ])
+  ])
+);
+assert.equal(api.extractLatestResponseText(), "");
+
+api.setLastSubmittedPromptText("");
+setPage(
+  context,
+  "grok.com",
+  el("main", {}, "", {}, [
+    el("textarea", { "aria-label": "Ask" }, "", { top: 90, bottom: 110 }),
+    el("div", { "data-testid": "assistant-message" }, "", { top: 20, bottom: 40 }, [
       el("div", { class: "prose" }, "Evaluating OpenAI API options for feature", { top: 20, bottom: 40 })
     ])
   ])

@@ -716,7 +716,7 @@ function isAgentBridgePlaceholderResponse(text) {
     let onlySearchStatus = true;
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index].replace(/\s+/g, " ");
-      if (/^(Searched|Searching)\s+web$/i.test(line)) {
+      if (/^(Searched|Searching)\s+web$/i.test(line) || /^(Browsed|Browsing|Visited|Visiting)$/i.test(line)) {
         if (index + 1 < lines.length) index += 1;
         if (index + 1 < lines.length && /^\d+\s+results?$/i.test(lines[index + 1].replace(/\s+/g, " "))) {
           index += 1;

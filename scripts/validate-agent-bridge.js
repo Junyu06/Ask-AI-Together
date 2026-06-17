@@ -361,6 +361,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
       status: "response-found",
       text: "Searched web\nOpenAI Responses API official documentation\n5 results\nSearched web\nOpenAI Assistants API deprecation OR replacement Responses API\n4 results"
     },
+    { label: "poll-grok-browsed-status", status: "response-found", text: "Browsed\ndevelopers.openai.com/api/reference/responses/overview/" },
     { label: "poll-thinking-about", status: "response-found", text: "Thinking about current API docs" },
     { label: "poll-pending-ack", status: "response-found", text: "我会用公开的 OpenAI 官方页面核对，不按记忆回答。" },
     { label: "poll-zh-fragment", status: "response-found", text: "我会只" },
@@ -378,7 +379,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(polledPrimitive.ok, true);
   assert.equal(polledPrimitive.status, "response-found");
   assert.equal(polledPrimitive.text, "polled primitive answer");
-  assert.equal(polledPrimitive.metadata.attempts, 12);
+  assert.equal(polledPrimitive.metadata.attempts, 13);
   assert.equal(polledPrimitive.metadata.poll, true);
   assert.equal(polledPrimitive.metadata.timedOut, false);
   assert.deepEqual(callSequence, [
@@ -387,6 +388,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     "poll-grok-timer",
     "poll-grok-title",
     "poll-grok-search-status",
+    "poll-grok-browsed-status",
     "poll-thinking-about",
     "poll-pending-ack",
     "poll-zh-fragment",

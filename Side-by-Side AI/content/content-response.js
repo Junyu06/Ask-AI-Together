@@ -91,7 +91,8 @@ function isGrokThinkingDisclosureLine(line) {
 }
 
 function isGrokSearchHeaderLine(line) {
-  return /^(Searched|Searching)\s+web$/i.test(String(line || "").trim().replaceAll(/\s+/g, " "));
+  return /^(Searched|Searching)\s+web$/i.test(String(line || "").trim().replaceAll(/\s+/g, " "))
+    || /^(Browsed|Browsing|Visited|Visiting)$/i.test(String(line || "").trim().replaceAll(/\s+/g, " "));
 }
 
 function isGrokSearchResultCountLine(line) {
