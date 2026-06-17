@@ -274,6 +274,32 @@ setPage(
 );
 assert.equal(api.extractLatestResponseText(), "");
 
+api.setLastSubmittedPromptText("");
+setPage(
+  context,
+  "grok.com",
+  el("main", {}, "", {}, [
+    el("textarea", { "aria-label": "Ask" }, "", { top: 90, bottom: 110 }),
+    el("div", { "data-testid": "assistant-message" }, "", { top: 20, bottom: 40 }, [
+      el("div", { class: "prose" }, "Searched web\nOpenAI Responses API official documentation\n5 results\nSearched web\nOpenAI Assistants API deprecation OR replacement Responses API\n4 results", { top: 20, bottom: 40 })
+    ])
+  ])
+);
+assert.equal(api.extractLatestResponseText(), "");
+
+api.setLastSubmittedPromptText("");
+setPage(
+  context,
+  "grok.com",
+  el("main", {}, "", {}, [
+    el("textarea", { "aria-label": "Ask" }, "", { top: 90, bottom: 110 }),
+    el("div", { "data-testid": "assistant-message" }, "", { top: 20, bottom: 40 }, [
+      el("div", { class: "prose" }, "Searched web\nOpenAI Responses API official documentation\n5 results\nOK GROK FINAL", { top: 20, bottom: 40 })
+    ])
+  ])
+);
+assert.equal(api.extractLatestResponseText(), "OK GROK FINAL");
+
 api.setLastSubmittedPromptText("Wrapped user prompt should not win");
 setPage(
   context,

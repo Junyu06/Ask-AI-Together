@@ -87,6 +87,29 @@ function isGrokThinkingDisclosureLine(line) {
   return /^(Thought|Thinking|Reasoning|Reasoned|Analyzing)(?:\b|:)/i.test(normalized);
 }
 
+function isGrokSearchHeaderLine(line) {
+  return /^(Searched|Searching)\s+web$/i.test(String(line || "").trim().replaceAll(/\s+/g, " "));
+}
+
+function isGrokSearchResultCountLine(line) {
+  return /^\d+\s+results?$/i.test(String(line || "").trim().replaceAll(/\s+/g, " "));
+}
+
+function cleanGrokResponseLines(lines) {
+  const kept = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (isGrokStatusLine(line) || isGrokThinkingDisclosureLine(line)) continue;
+    if (isGrokSearchHeaderLine(line)) {
+      if (index + 1 < lines.length) index += 1;
+      if (index + 1 < lines.length && isGrokSearchResultCountLine(lines[index + 1])) index += 1;
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept;
+}
+
 function isClaudeResponseHeadingLine(line) {
   return CLAUDE_RESPONSE_HEADING_RE.test(String(line || "").trim());
 }
@@ -141,10 +164,9 @@ function cleanResponseTextForSite(text, siteId = "") {
       .trim();
   }
   if (siteId === "grok") {
-    return normalized
+    return cleanGrokResponseLines(normalized
       .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => !isGrokStatusLine(line) && !isGrokThinkingDisclosureLine(line))
+      .map((line) => line.trim()))
       .join("\n")
       .replaceAll(/\n{3,}/g, "\n\n")
       .trim();

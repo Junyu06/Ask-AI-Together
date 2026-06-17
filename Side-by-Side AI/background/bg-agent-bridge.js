@@ -702,6 +702,24 @@ function isAgentBridgePlaceholderResponse(text) {
     return true;
   }
 
+  const lines = rawText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length) {
+    let onlySearchStatus = true;
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index].replace(/\s+/g, " ");
+      if (/^(Searched|Searching)\s+web$/i.test(line)) {
+        if (index + 1 < lines.length) index += 1;
+        if (index + 1 < lines.length && /^\d+\s+results?$/i.test(lines[index + 1].replace(/\s+/g, " "))) {
+          index += 1;
+        }
+        continue;
+      }
+      onlySearchStatus = false;
+      break;
+    }
+    if (onlySearchStatus) return true;
+  }
+
   if (normalized.length > 180) return false;
   return [
     /^(i('|’)?ll|i will|i would|i can|i('|’)?m going to|i am going to|let me)\b.{0,140}\b(check|verify|look up|search|confirm|review)\b/i,
