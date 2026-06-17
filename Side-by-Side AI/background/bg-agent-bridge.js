@@ -683,6 +683,7 @@ function isAgentBridgePlaceholderResponse(text) {
     .toLowerCase();
   if ([
     "thinking",
+    "analyzing",
     "loading",
     "generating",
     "思考中",
@@ -693,7 +694,7 @@ function isAgentBridgePlaceholderResponse(text) {
     return true;
   }
 
-  if (/^(thought|thinking|reasoning|reasoned)(?:\b|:)/i.test(normalized) && normalized.length <= 600) {
+  if (/^(thought|thinking|reasoning|reasoned|analyzing)(?:\b|:)/i.test(normalized) && normalized.length <= 600) {
     return true;
   }
 

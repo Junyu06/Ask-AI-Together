@@ -74,13 +74,13 @@ function hasUserMessageSignal(node) {
 function isGrokStatusLine(line) {
   const normalized = String(line || "").trim().replaceAll(/\s+/g, " ");
   if (!normalized || normalized.length > 48) return false;
-  return /^(Thought|Thinking|Reasoning|Reasoned)(?:\s+(?:for|about)\s+(?:(?:a|an)\s+)?(?:\d+(?:\.\d+)?\s*)?(?:s|sec|secs|second|seconds|min|mins|minute|minutes))?\.?$/i.test(normalized);
+  return /^(Thought|Thinking|Reasoning|Reasoned|Analyzing)(?:\s+(?:for|about)\s+(?:(?:a|an)\s+)?(?:\d+(?:\.\d+)?\s*)?(?:s|sec|secs|second|seconds|min|mins|minute|minutes))?\.?$/i.test(normalized);
 }
 
 function isGrokThinkingDisclosureLine(line) {
   const normalized = String(line || "").trim().replaceAll(/\s+/g, " ");
   if (!normalized || normalized.length > 260) return false;
-  return /^(Thought|Thinking|Reasoning|Reasoned)(?:\b|:)/i.test(normalized);
+  return /^(Thought|Thinking|Reasoning|Reasoned|Analyzing)(?:\b|:)/i.test(normalized);
 }
 
 function isClaudeResponseHeadingLine(line) {
