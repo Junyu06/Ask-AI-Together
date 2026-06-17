@@ -47,6 +47,7 @@ const AGENT_BRIDGE_NEW_CHAT_TIMEOUT_MS = 5000;
 const AGENT_BRIDGE_NEW_CHAT_DEFAULT_SETTLE_MS = 2000;
 const AGENT_BRIDGE_NEW_CHAT_MAX_SETTLE_MS = 5000;
 const AGENT_BRIDGE_COLLECT_POLL_INTERVAL_MS = 2000;
+const AGENT_BRIDGE_SHORT_RESPONSE_STABILITY_CHARS = 200;
 const AGENT_BRIDGE_FORBIDDEN_KEYS = new Set([
   "attachment",
   "attachments",
@@ -698,6 +699,10 @@ function isAgentBridgePlaceholderResponse(text) {
     return true;
   }
 
+  if (/^(我会|我将|我来|我先|我只|我可以|让我).{0,20}$/i.test(rawText)) {
+    return true;
+  }
+
   if (/^(evaluating|comparing|researching|searching|reviewing|checking|looking|assessing|understanding)\b/i.test(normalized) && normalized.length <= 100) {
     return true;
   }
@@ -969,6 +974,7 @@ async function bridgeCollectResponse(normalized, context) {
   let section = {};
   let status = "response-empty";
   let placeholderSeen = false;
+  let pendingShortResponseText = "";
   do {
     attemptCount += 1;
     try {
@@ -985,6 +991,16 @@ async function bridgeCollectResponse(normalized, context) {
     status = section.status || (text ? "response-found" : "response-empty");
     if (status === "response-found" && isAgentBridgePlaceholderResponse(text)) {
       placeholderSeen = true;
+      status = "response-empty";
+    }
+    if (
+      status === "response-found"
+      && poll
+      && text.length > 0
+      && text.length < AGENT_BRIDGE_SHORT_RESPONSE_STABILITY_CHARS
+      && text !== pendingShortResponseText
+    ) {
+      pendingShortResponseText = text;
       status = "response-empty";
     }
     if (!poll || status === "response-found" || status === "transport-failed") break;

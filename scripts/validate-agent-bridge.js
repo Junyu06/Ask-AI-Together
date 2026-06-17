@@ -363,8 +363,11 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     },
     { label: "poll-thinking-about", status: "response-found", text: "Thinking about current API docs" },
     { label: "poll-pending-ack", status: "response-found", text: "我会用公开的 OpenAI 官方页面核对，不按记忆回答。" },
+    { label: "poll-zh-fragment", status: "response-found", text: "我会只" },
     { label: "poll-empty-b", status: "response-empty", text: "" },
-    { label: "poll-found", status: "response-found", text: "polled primitive answer" }
+    { label: "poll-short-fragment", status: "response-found", text: "Com" },
+    { label: "poll-found-a", status: "response-found", text: "polled primitive answer" },
+    { label: "poll-found-b", status: "response-found", text: "polled primitive answer" }
   ];
   const polledPrimitive = await bridge.handleAgentBridgeRequest({
     action: "collectResponse",
@@ -375,7 +378,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(polledPrimitive.ok, true);
   assert.equal(polledPrimitive.status, "response-found");
   assert.equal(polledPrimitive.text, "polled primitive answer");
-  assert.equal(polledPrimitive.metadata.attempts, 9);
+  assert.equal(polledPrimitive.metadata.attempts, 12);
   assert.equal(polledPrimitive.metadata.poll, true);
   assert.equal(polledPrimitive.metadata.timedOut, false);
   assert.deepEqual(callSequence, [
@@ -386,8 +389,11 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     "poll-grok-search-status",
     "poll-thinking-about",
     "poll-pending-ack",
+    "poll-zh-fragment",
     "poll-empty-b",
-    "poll-found"
+    "poll-short-fragment",
+    "poll-found-a",
+    "poll-found-b"
   ]);
 
   const providerStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
