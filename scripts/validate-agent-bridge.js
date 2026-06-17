@@ -354,6 +354,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   scenario.collectQueue = [
     { label: "poll-thinking", status: "response-found", text: "Thinking" },
     { label: "poll-analyzing", status: "response-found", text: "Analyzing..." },
+    { label: "poll-grok-timer", status: "response-found", text: "Comparing OpenAI API options for Pi companion • 4s" },
     { label: "poll-thinking-about", status: "response-found", text: "Thinking about current API docs" },
     { label: "poll-pending-ack", status: "response-found", text: "我会用公开的 OpenAI 官方页面核对，不按记忆回答。" },
     { label: "poll-empty-b", status: "response-empty", text: "" },
@@ -368,10 +369,10 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(polledPrimitive.ok, true);
   assert.equal(polledPrimitive.status, "response-found");
   assert.equal(polledPrimitive.text, "polled primitive answer");
-  assert.equal(polledPrimitive.metadata.attempts, 6);
+  assert.equal(polledPrimitive.metadata.attempts, 7);
   assert.equal(polledPrimitive.metadata.poll, true);
   assert.equal(polledPrimitive.metadata.timedOut, false);
-  assert.deepEqual(callSequence, ["poll-thinking", "poll-analyzing", "poll-thinking-about", "poll-pending-ack", "poll-empty-b", "poll-found"]);
+  assert.deepEqual(callSequence, ["poll-thinking", "poll-analyzing", "poll-grok-timer", "poll-thinking-about", "poll-pending-ack", "poll-empty-b", "poll-found"]);
 
   const providerStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
   assert.equal(providerStatus.ok, true);

@@ -73,7 +73,11 @@ function hasUserMessageSignal(node) {
 
 function isGrokStatusLine(line) {
   const normalized = String(line || "").trim().replaceAll(/\s+/g, " ");
-  if (!normalized || normalized.length > 48) return false;
+  if (!normalized) return false;
+  if (normalized.length <= 140 && /[•·]\s*\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes)$/i.test(normalized)) {
+    return true;
+  }
+  if (normalized.length > 48) return false;
   return /^(Thought|Thinking|Reasoning|Reasoned|Analyzing)(?:\s+(?:for|about)\s+(?:(?:a|an)\s+)?(?:\d+(?:\.\d+)?\s*)?(?:s|sec|secs|second|seconds|min|mins|minute|minutes))?\.?$/i.test(normalized);
 }
 

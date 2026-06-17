@@ -698,6 +698,10 @@ function isAgentBridgePlaceholderResponse(text) {
     return true;
   }
 
+  if (/[•·]\s*\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes)$/i.test(normalized) && normalized.length <= 180) {
+    return true;
+  }
+
   if (normalized.length > 180) return false;
   return [
     /^(i('|’)?ll|i will|i would|i can|i('|’)?m going to|i am going to|let me)\b.{0,140}\b(check|verify|look up|search|confirm|review)\b/i,
