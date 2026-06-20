@@ -49,7 +49,7 @@
 | `background/bg-switcher.js` | `chrome.action.onClicked`、`openSwitcherFromToolbarAction`（先尝试页内嵌侧栏消息，再 `openSelectedAisTiled`）、`loadOrderedSelectedSitesFromStorage`、`focusOpenedTargetsThenSwitcher`。 |
 | `background/bg-tiling.js` | 工作区矩形计算、`ensureWindowForSite`、`openOrReuseWindows`、`applyTile`、`broadcastToExtensionPages`。 |
 | `background/bg-actions.js` | `focusTarget`、`appendHistoryAfterSend`、`sendPromptToTargets`、`collectLastFromTargets`、`newChatOnTargets`、`restoreHistoryUrlsToTargets`、`getState`。 |
-| `background/bg-agent-bridge.js` | 受信任扩展页面专用 agent bridge：暴露 allowlisted primitive actions（`health` / `listProviders` / `openProvider` / `ensureFreshConversation` / `sendPrompt` / `collectResponse` / `getProviderStatus`），并保留旧 compatibility actions 仅作兼容，不作为 Hermes 正常路径。 |
+| `background/bg-agent-bridge.js` | 受信任扩展页面专用 agent bridge：暴露 allowlisted primitive actions（`health` / `listProviders` / `openProvider` / `ensureFreshConversation` / `sendPrompt` / `collectResponse` / `getProviderStatus`），并保留旧 compatibility actions 仅作兼容，不作为 Hermes 正常路径。`getProviderStatus`、fresh/open/send/collect responses 会 best-effort 暴露 provider conversation metadata（`status`、`marker_type`、`marker_hash`、`captured_at`），供上层 agent 做同一 session continuity 检查。 |
 
 **消息类型（节选）**：自 content 经 background 转发 `OA_SEND_PROGRESS`、`OA_UPDATE_HISTORY`、`OA_QUOTE_TEXT`；自 UI（选项页）发往 background：`OA_BG_*`（详见 `background/background.js` 内分支）。
 
@@ -130,3 +130,4 @@
 - bridge 不应保存原始外部 AI 回答为长期记忆；primitive path 只保留最小 metadata。
 - `collectResponse` 需要把 provider 的中间态当作不可计入结果处理，尤其是 Grok 的 thinking/analyzing/timer/search/browsed/title/短碎片状态；短回答要稳定后再返回给上层 agent。
 - provider 账号状态是外部依赖：额度用完、paywall、未登录或会员限制应作为 provider-level unavailable / failed 处理，不应直接判断为 bridge bug。
+- provider conversation metadata 只是观测面：bridge 可以回报当前 provider marker 和 hash，但不替上层 agent 判断是否复用 conversation；Pi 这类调用方必须自己按 session 边界、marker match / mismatch 和隐私规则决定 fresh 或 reuse。
