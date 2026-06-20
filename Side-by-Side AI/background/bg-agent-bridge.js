@@ -675,6 +675,110 @@ function targetForProvider(targets, providerId) {
   };
 }
 
+function canonicalConversationUrl(providerId, rawUrl) {
+  const text = String(rawUrl || "").trim();
+  if (!text) {
+    return { status: "unavailable", marker: "", marker_type: "" };
+  }
+
+  let url = null;
+  try {
+    url = new URL(text);
+  } catch (_error) {
+    return { status: "unavailable", marker: "", marker_type: "" };
+  }
+
+  const exactHost = (expectedHost) => (hostname) => hostname === expectedHost;
+  const patterns = {
+    chatgpt: {
+      canonicalHost: "chatgpt.com",
+      pathPrefix: "c",
+      matchesHost: (hostname) =>
+        hostname === "chatgpt.com"
+        || hostname === "chat.openai.com"
+        || hostname.endsWith(".chatgpt.com")
+        || hostname.endsWith(".chat.openai.com")
+    },
+    claude: { canonicalHost: "claude.ai", pathPrefix: "chat", matchesHost: exactHost("claude.ai") },
+    gemini: { canonicalHost: "gemini.google.com", pathPrefix: "app", matchesHost: exactHost("gemini.google.com") },
+    grok: { canonicalHost: "grok.com", pathPrefix: "chat", matchesHost: exactHost("grok.com") }
+  };
+  const pattern = patterns[providerId];
+  const hostname = url.hostname.toLowerCase();
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+  if (
+    !pattern
+    || url.protocol !== "https:"
+    || !pattern.matchesHost(hostname)
+    || pathSegments.length !== 2
+    || pathSegments[0] !== pattern.pathPrefix
+    || !pathSegments[1]
+  ) {
+    return { status: "not_conversation_url", marker: "", marker_type: "" };
+  }
+
+  return {
+    status: "available",
+    marker: `https://${pattern.canonicalHost}/${pattern.pathPrefix}/${pathSegments[1]}`,
+    marker_type: "canonical_url"
+  };
+}
+
+function conversationForProviderTarget(target, providerId) {
+  if (!target?.tabId) {
+    return {
+      providerId,
+      status: "provider_unbound",
+      marker: "",
+      marker_type: "",
+      marker_hash: "",
+      captured_at: nowIso()
+    };
+  }
+  const normalized = canonicalConversationUrl(providerId, target?.url || "");
+  return {
+    providerId,
+    ...normalized,
+    marker_hash: normalized.marker ? stableHash(normalized.marker) : "",
+    captured_at: nowIso()
+  };
+}
+
+async function targetWithCurrentUrl(target) {
+  if (!target?.tabId || target?.url || typeof chrome?.tabs?.get !== "function") {
+    return target || {};
+  }
+  try {
+    const tab = await chrome.tabs.get(target.tabId);
+    if (tab?.url) return { ...target, url: tab.url };
+  } catch (_error) {
+    /* Current tab URL is best-effort metadata; leave the target unchanged. */
+  }
+  return target || {};
+}
+
+async function targetForProviderWithConversation(targets, providerId) {
+  const currentTarget = await targetWithCurrentUrl(targets?.[providerId] || {});
+  const targetsWithCurrentUrl = {
+    ...(targets || {}),
+    [providerId]: currentTarget
+  };
+  return {
+    target: targetForProvider(targetsWithCurrentUrl, providerId),
+    conversation: conversationForProviderTarget(currentTarget, providerId)
+  };
+}
+
+async function conversationForProviderAfterAction(providerId) {
+  try {
+    const targets = await loadTargets();
+    const current = await targetForProviderWithConversation(targets, providerId);
+    return current.conversation;
+  } catch (_error) {
+    return conversationForProviderTarget({}, providerId);
+  }
+}
+
 function isAgentBridgePlaceholderResponse(text) {
   const rawText = String(text || "").trim();
   const normalized = rawText
@@ -873,16 +977,26 @@ async function bridgeOpenProvider(normalized, context) {
       targets: {}
     };
   }
-  return {
+  const resultTarget = result?.targets?.[normalized.providerId] || {};
+  const current = await targetForProviderWithConversation(result?.targets || {}, normalized.providerId);
+  const response = {
     ok: result?.ok !== false,
     bridgeVersion: AGENT_BRIDGE_VERSION,
     action: normalized.action,
     requestId: normalized.requestId,
     providerId: normalized.providerId,
     status: result?.ok === false ? "open-failed" : "provider-opened",
-    target: targetForProvider(result?.targets || {}, normalized.providerId),
+    target: current.target,
     reason: result?.reason || result?.error || ""
   };
+  if (
+    resultTarget?.url
+    || current.conversation.status === "available"
+    || current.conversation.status === "not_conversation_url"
+  ) {
+    response.conversation = current.conversation;
+  }
+  return response;
 }
 
 async function bridgeEnsureFreshConversation(normalized, context) {
@@ -903,6 +1017,7 @@ async function bridgeEnsureFreshConversation(normalized, context) {
   const completedAt = nowIso();
   const outcome = outcomeForProvider(result, normalized.providerId) || {};
   const ok = result?.ok !== false && outcome?.ok !== false;
+  const conversation = await conversationForProviderAfterAction(normalized.providerId);
   return {
     ok,
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -911,6 +1026,7 @@ async function bridgeEnsureFreshConversation(normalized, context) {
     providerId: normalized.providerId,
     status: ok ? "fresh-conversation-ready" : (outcome?.status || result?.status || "new-chat-failed"),
     reason: outcome?.reason || outcome?.error || result?.reason || result?.error || "",
+    conversation,
     evidence: {
       startedAt,
       completedAt,
@@ -945,6 +1061,7 @@ async function bridgeSendPrompt(normalized, context) {
   }
   const outcome = outcomeForProvider(result, normalized.providerId) || {};
   const ok = result?.ok !== false && outcome?.ok !== false;
+  const conversation = await conversationForProviderAfterAction(normalized.providerId);
   return {
     ok,
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -953,6 +1070,7 @@ async function bridgeSendPrompt(normalized, context) {
     providerId: normalized.providerId,
     status: outcome?.status || result?.status || (ok ? "send-submitted" : "send-failed"),
     reason: outcome?.reason || outcome?.error || result?.reason || result?.error || "",
+    conversation,
     metadata: {
       promptHash: stableHash(normalized.prompt),
       promptLength: normalized.prompt.length,
@@ -1010,6 +1128,7 @@ async function bridgeCollectResponse(normalized, context) {
   const rawText = String(section.text || "");
   const text = status === "response-found" && !isAgentBridgePlaceholderResponse(rawText) ? rawText : "";
   const timedOut = poll && status === "response-empty" && timeoutMs > 0 && Date.now() >= deadlineAtMs;
+  const conversation = await conversationForProviderAfterAction(normalized.providerId);
   return {
     ok: result?.ok !== false && status !== "transport-failed",
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -1019,6 +1138,7 @@ async function bridgeCollectResponse(normalized, context) {
     status,
     text,
     reason: section.reason || section.error || result?.reason || result?.error || (timedOut ? "response-timeout" : placeholderSeen ? "placeholder-response" : ""),
+    conversation,
     metadata: {
       answerHash: text ? stableHash(text) : "",
       answerLength: text.length,
@@ -1034,6 +1154,7 @@ async function bridgeCollectResponse(normalized, context) {
 
 async function bridgeGetProviderStatus(normalized) {
   const targets = await loadTargets();
+  const current = await targetForProviderWithConversation(targets, normalized.providerId);
   const providerIds = [normalized.providerId];
   const entries = siteEntriesForProviderIds(providerIds);
   let capabilitiesResult = null;
@@ -1053,9 +1174,10 @@ async function bridgeGetProviderStatus(normalized) {
     action: normalized.action,
     requestId: normalized.requestId,
     providerId: normalized.providerId,
-    status: targets?.[normalized.providerId]?.tabId ? "bound" : "unbound",
-    target: targetForProvider(targets, normalized.providerId),
+    status: current.target.bound ? "bound" : "unbound",
+    target: current.target,
     capability,
+    conversation: current.conversation,
     generation: {
       status: "unknown",
       reason: "generation-state-not-exposed"

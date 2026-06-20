@@ -56,6 +56,22 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     newChat: {},
     send: {}
   };
+  const defaultTargetUrls = {
+    chatgpt: "https://chatgpt.com/c/unit-chatgpt-session",
+    gemini: "https://gemini.google.com/app/unit-gemini-session",
+    claude: "https://claude.ai/chat/unit-claude-session",
+    grok: "https://grok.com/chat/unit-grok-session"
+  };
+  function targetUrlForProvider(siteId) {
+    return scenario.targetUrls?.[siteId] ?? defaultTargetUrls[siteId] ?? "";
+  }
+  function loadTargetForProvider(siteId, windowId, tabId) {
+    const target = { siteId, windowId, tabId, transport: "window" };
+    if (!scenario.omitTargetUrls?.includes(siteId)) {
+      target.url = targetUrlForProvider(siteId);
+    }
+    return target;
+  }
   const nativeSetTimeout = setTimeout;
   const nativeClearTimeout = clearTimeout;
   const sessionStore = {};
@@ -79,6 +95,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     JSON,
     Object,
     Promise,
+    URL,
     setTimeout(callback, ms, ...args) {
       return nativeSetTimeout(callback, scenario.fastTimers ? 0 : ms, ...args);
     },
@@ -98,6 +115,13 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
         },
         getManifest() {
           return { name: "Side-by-Side AI", version: "0.3.1" };
+        }
+      },
+      tabs: {
+        async get(tabId) {
+          if (scenario.tabGetThrows) throw new Error("unit-tab-get-failed");
+          const tabUrl = scenario.tabUrls?.[tabId] ?? scenario.tabUrls?.[String(tabId)] ?? "";
+          return { id: tabId, url: tabUrl };
         }
       },
       storage: {
@@ -126,7 +150,9 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
     },
     async loadTargets() {
       return {
-        chatgpt: { siteId: "chatgpt", windowId: 1, tabId: 11, transport: "window" }
+        chatgpt: loadTargetForProvider("chatgpt", 1, 11),
+        gemini: loadTargetForProvider("gemini", 2, 12),
+        claude: loadTargetForProvider("claude", 3, 13)
       };
     },
     async getCapabilitiesForTargets(siteIds) {
@@ -403,6 +429,65 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(providerStatus.status, "bound");
   assert.equal(providerStatus.target.tabId, 11);
   assert.equal(providerStatus.generation.status, "unknown");
+  assert.equal(providerStatus.conversation.status, "available");
+  assert.equal(providerStatus.conversation.marker_type, "canonical_url");
+  assert.equal(providerStatus.conversation.marker, "https://chatgpt.com/c/unit-chatgpt-session");
+  assert.equal(providerStatus.conversation.marker_hash.startsWith("fnv1a32:"), true);
+  assert.equal(typeof providerStatus.conversation.captured_at, "string");
+
+  scenario.targetUrls = { chatgpt: "https://chat.openai.com/c/unit-chatgpt-openai-session" };
+  const openAiHostProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(openAiHostProviderStatus.ok, true);
+  assert.equal(openAiHostProviderStatus.conversation.status, "available");
+  assert.equal(openAiHostProviderStatus.conversation.marker, "https://chatgpt.com/c/unit-chatgpt-openai-session");
+
+  scenario.targetUrls = { chatgpt: "https://team.chat.openai.com/c/unit-chatgpt-openai-subdomain-session" };
+  const openAiSubdomainProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(openAiSubdomainProviderStatus.ok, true);
+  assert.equal(openAiSubdomainProviderStatus.conversation.status, "available");
+  assert.equal(openAiSubdomainProviderStatus.conversation.marker, "https://chatgpt.com/c/unit-chatgpt-openai-subdomain-session");
+
+  scenario.targetUrls = { chatgpt: "https://team.chatgpt.com/c/unit-chatgpt-subdomain-session" };
+  const subdomainProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(subdomainProviderStatus.ok, true);
+  assert.equal(subdomainProviderStatus.conversation.status, "available");
+  assert.equal(subdomainProviderStatus.conversation.marker, "https://chatgpt.com/c/unit-chatgpt-subdomain-session");
+
+  scenario.targetUrls = { chatgpt: "https://chatgpt.com/" };
+  const rootProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(rootProviderStatus.ok, true);
+  assert.equal(rootProviderStatus.conversation.status, "not_conversation_url");
+  assert.equal(rootProviderStatus.conversation.marker, "");
+  assert.equal(rootProviderStatus.conversation.marker_hash, "");
+
+  scenario.targetUrls = { chatgpt: "https://chat.openai.com/" };
+  const openAiRootProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(openAiRootProviderStatus.ok, true);
+  assert.equal(openAiRootProviderStatus.conversation.status, "not_conversation_url");
+  assert.equal(openAiRootProviderStatus.conversation.marker, "");
+
+  scenario.targetUrls = {};
+  scenario.omitTargetUrls = ["chatgpt"];
+  scenario.tabUrls = { 11: "https://chat.openai.com/c/unit-chatgpt-tab-fallback-session" };
+  const tabFallbackProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(tabFallbackProviderStatus.ok, true);
+  assert.equal(tabFallbackProviderStatus.conversation.status, "available");
+  assert.equal(tabFallbackProviderStatus.conversation.marker, "https://chatgpt.com/c/unit-chatgpt-tab-fallback-session");
+
+  scenario.tabUrls = { 11: "" };
+  const blankTabFallbackProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(blankTabFallbackProviderStatus.ok, true);
+  assert.equal(blankTabFallbackProviderStatus.conversation.status, "unavailable");
+  assert.equal(blankTabFallbackProviderStatus.conversation.marker, "");
+  assert.equal(blankTabFallbackProviderStatus.conversation.marker_hash, "");
+
+  scenario.tabGetThrows = true;
+  const throwingTabFallbackProviderStatus = await bridge.handleAgentBridgeRequest({ action: "getProviderStatus", providerId: "chatgpt" });
+  assert.equal(throwingTabFallbackProviderStatus.ok, true);
+  assert.equal(throwingTabFallbackProviderStatus.conversation.status, "unavailable");
+  scenario.omitTargetUrls = [];
+  scenario.tabUrls = {};
+  scenario.tabGetThrows = false;
   assert.equal(sessionSetCount, primitiveSessionSetCountBefore, "primitive actions must not write chrome.storage.session");
   assert.equal(
     Object.prototype.hasOwnProperty.call(sessionStore, "oa_agent_bridge_runs_v1"),
