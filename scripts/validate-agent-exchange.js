@@ -43,6 +43,7 @@ function waitFor(predicate, { timeoutMs = 2000, intervalMs = 10, label = "condit
   let newChatCalls = [];
   let openCalls = [];
   let probeCalls = [];
+  let nudgeCalls = [];
 
   const context = vm.createContext({
     console,
@@ -89,6 +90,16 @@ function waitFor(predicate, { timeoutMs = 2000, intervalMs = 10, label = "condit
       tabs: {
         async get(tabId) {
           return { id: tabId, url: scenario.tabUrls?.[tabId] || "" };
+        },
+        async update(tabId, properties) {
+          nudgeCalls.push({ kind: "tab", tabId, properties });
+          return { id: tabId };
+        }
+      },
+      windows: {
+        async update(windowId, properties) {
+          nudgeCalls.push({ kind: "window", windowId, properties });
+          return { id: windowId };
         }
       },
       scripting: {
@@ -200,6 +211,7 @@ function waitFor(predicate, { timeoutMs = 2000, intervalMs = 10, label = "condit
     newChatCalls = [];
     openCalls = [];
     probeCalls = [];
+    nudgeCalls = [];
     scenario = nextScenario;
   }
 
@@ -462,6 +474,41 @@ function waitFor(predicate, { timeoutMs = 2000, intervalMs = 10, label = "condit
   assert.equal(stalledSnap.providers[0].phase, "failed");
   assert.equal(stalledSnap.providers[0].errorCode, "chain-stalled");
   assert.equal(stalledSnap.providers[0].retryable, true);
+
+  /* ---------- 可见性 nudge：发送后久无候选文本 → 把 tab 带前台一次 ---------- */
+  resetAll({
+    targets: boundTargets,
+    baselineTexts: {},
+    probeQueues: { 11: [{ busy: true, signal: "unit-busy" }] }
+  });
+  const nudgeStarted = await bridge.handleAgentBridgeRequest({
+    action: "startExchange",
+    requestId: "req-exchange-nudge",
+    providerIds: ["chatgpt"],
+    prompt: "nudge question",
+    options: { newChatSettleMs: 0 }
+  });
+  await waitFor(() => sendCalls.length === 1, { label: "nudge send" });
+  await waitFor(async () => {
+    const snap = await bridge.handleAgentBridgeRequest({ action: "getExchangeStatus", exchangeId: nudgeStarted.exchangeId });
+    return ["sent", "generating", "stabilizing"].includes(snap.providers[0].phase);
+  }, { label: "nudge provider sent" });
+  assert.equal(nudgeCalls.length, 0, "no nudge before threshold");
+  {
+    const record = exchangeModule._test.agentExchanges.get(nudgeStarted.exchangeId);
+    record.providers.chatgpt.submittedAtMs -= 40000;
+    record.providers.chatgpt.sample.sampledAtMs = 0;
+  }
+  await bridge.handleAgentBridgeRequest({ action: "getExchangeStatus", exchangeId: nudgeStarted.exchangeId });
+  assert.deepEqual(nudgeCalls.map((c) => c.kind), ["tab", "window"], "stuck provider should get one visibility nudge");
+  assert.equal(nudgeCalls[0].tabId, 11);
+  assert.equal(nudgeCalls[0].properties.active, true);
+  {
+    const record = exchangeModule._test.agentExchanges.get(nudgeStarted.exchangeId);
+    record.providers.chatgpt.sample.sampledAtMs = 0;
+  }
+  await bridge.handleAgentBridgeRequest({ action: "getExchangeStatus", exchangeId: nudgeStarted.exchangeId });
+  assert.equal(nudgeCalls.length, 2, "nudge fires at most once per provider per exchange");
 
   /* ---------- providerOptions：单家跳过 fresh ---------- */
   resetAll({

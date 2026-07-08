@@ -14,6 +14,11 @@ const AGENT_EXCHANGE_DEFAULT_COLLECT_TIMEOUT_MS = 180000;
 const AGENT_EXCHANGE_MIN_SAMPLE_INTERVAL_MS = 1000;
 const AGENT_EXCHANGE_STABLE_SAMPLES_REQUIRED = 2;
 const AGENT_EXCHANGE_PRESEND_STALL_MS = 25000;
+/* 发送后这么久还没有任何候选文本 → 把 provider tab 带到前台一次。
+ * macOS 会把被完全遮挡的窗口打入后台暂停渲染（Gemini 的 A/B 评测实验在
+ * hidden tab 上永远加载不出候选回复，实测带到前台立即渲染）。这套 Chrome
+ * 是专用自动化实例，抢自己窗口的焦点没有副作用。 */
+const AGENT_EXCHANGE_VISIBILITY_NUDGE_AFTER_MS = 30000;
 
 const AGENT_EXCHANGE_TERMINAL_PHASES = new Set(["completed", "failed", "cancelled"]);
 const AGENT_EXCHANGE_MONITOR_PHASES = new Set(["sent", "generating", "stabilizing"]);
@@ -86,6 +91,7 @@ function createExchangeProvider(providerId, newChatBeforeSend) {
     sendStatus: "",
     newChatBeforeSend,
     sawBusySignal: false,
+    visibilityNudged: false,
     generation: { state: "unknown", signal: "", sampledAt: "" },
     baseline: { textHash: "", textLength: 0, baselineAt: "" },
     sample: { textHash: "", textLength: 0, stableCount: 0, sampledAt: "", sampledAtMs: 0 },
@@ -419,6 +425,20 @@ async function pumpExchangeProvider(exchange, providerId, targets, nowMs) {
   if (!rec?.tabId) {
     setExchangeProviderFailed(exchange, providerId, "missing-tab", "provider tab lost during exchange");
     return true;
+  }
+
+  if (
+    !provider.visibilityNudged
+    && !provider.text
+    && nowMs - submittedAtMs > AGENT_EXCHANGE_VISIBILITY_NUDGE_AFTER_MS
+  ) {
+    provider.visibilityNudged = true;
+    try {
+      await chrome.tabs.update(rec.tabId, { active: true });
+    } catch (_error) { /* best-effort */ }
+    try {
+      if (rec.windowId != null) await chrome.windows.update(rec.windowId, { focused: true });
+    } catch (_error) { /* best-effort */ }
   }
 
   const probe = await probeProviderGenerationStateWithRecovery(rec.tabId, providerId);
