@@ -49,7 +49,7 @@
 | `background/bg-switcher.js` | `chrome.action.onClicked`、`openSwitcherFromToolbarAction`（先尝试页内嵌侧栏消息，再 `openSelectedAisTiled`）、`loadOrderedSelectedSitesFromStorage`、`focusOpenedTargetsThenSwitcher`。 |
 | `background/bg-tiling.js` | 工作区矩形计算、`ensureWindowForSite`、`openOrReuseWindows`、`applyTile`、`broadcastToExtensionPages`。 |
 | `background/bg-actions.js` | `focusTarget`、`appendHistoryAfterSend`、`sendPromptToTargets`、`collectLastFromTargets`、`newChatOnTargets`、`restoreHistoryUrlsToTargets`、`getState`。 |
-| `background/bg-agent-bridge.js` | 受信任扩展页面专用 agent bridge：暴露 allowlisted primitive actions（`health` / `listProviders` / `openProvider` / `ensureFreshConversation` / `sendPrompt` / `collectResponse` / `getProviderStatus`），并保留旧 compatibility actions 仅作兼容，不作为 Hermes 正常路径。`getProviderStatus`、fresh/open/send/collect responses 会 best-effort 暴露 provider conversation metadata（`status`、`marker_type`、`marker_hash`、`captured_at`），供上层 agent 做同一 session continuity 检查。 |
+| `background/bg-agent-bridge.js` | 受信任扩展页面专用 agent bridge：暴露 allowlisted primitive actions（`health` / `listProviders` / `openProvider` / `ensureFreshConversation` / `sendPrompt` / `collectResponse` / `getProviderStatus`）与 exchange actions（`startExchange` / `getExchangeStatus` / `cancelExchange`，v2 首选编排路径，配合 `background/bg-agent-exchange.js` 在 extension 内并行推进各 provider 并暴露 per-provider 相位），并保留旧 compatibility actions 仅作兼容，不作为 Hermes 正常路径。`getProviderStatus`、fresh/open/send/collect responses 会 best-effort 暴露 provider conversation metadata（`status`、`marker_type`、`marker_hash`、`captured_at`），供上层 agent 做同一 session continuity 检查。 |
 
 **消息类型（节选）**：自 content 经 background 转发 `OA_SEND_PROGRESS`、`OA_UPDATE_HISTORY`、`OA_QUOTE_TEXT`；自 UI（选项页）发往 background：`OA_BG_*`（详见 `background/background.js` 内分支）。
 
@@ -125,6 +125,7 @@
 `agent-bridge` 是给受信任扩展页面和外部 agent helper 使用的连接层，不是新的产品脑。
 
 - primitive actions 只做单步连接：打开/绑定 provider、确保新会话、发送 prompt、回收回复、查状态。
+- exchange actions（v2，2026-07-08）把「fresh → send → 生成监控 → 收文本」这组固定连接序列放进 extension 内并行执行，并以 per-provider 相位机对上层可观测（`getExchangeStatus` 轮询即推进，SW 重启安全、pre-send 停滞 fail-closed 不重发）；它仍是连接层编排，不做隐私过滤、重试策略或综合判断。
 - 上层 agent 负责判断何时调用、发送什么 prompt、隐私过滤、重试/停止策略和最终综合。
 - compatibility actions（如 `sendAll` / `collectAll`）只为旧调试或兼容保留，不应成为 Hermes `external-ai-research` 的正常路径。
 - bridge 不应保存原始外部 AI 回答为长期记忆；primitive path 只保留最小 metadata。
