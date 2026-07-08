@@ -10,7 +10,8 @@ importScripts(
   "bg-switcher.js",
   "bg-tiling.js",
   "bg-actions.js",
-  "bg-agent-bridge.js"
+  "bg-agent-bridge.js",
+  "bg-agent-exchange.js"
 );
 
 globalThis.__ASK_AI_TOGETHER_RUNTIME__?.markBootstrapped?.({

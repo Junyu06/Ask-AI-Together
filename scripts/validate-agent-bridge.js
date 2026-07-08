@@ -31,7 +31,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   });
   pageContext.globalThis = pageContext;
   vm.runInContext(fs.readFileSync(bridgePagePath, "utf8"), pageContext, { filename: bridgePagePath });
-  assert.equal(pageContext.AskAiTogetherAgentBridge.version, "agent-bridge-mvp-v1");
+  assert.equal(pageContext.AskAiTogetherAgentBridge.version, "agent-bridge-mvp-v2");
   assert.equal(typeof pageContext.AskAiTogetherAgentBridge.request, "function");
   const response = await vm.runInContext(
     "AskAiTogetherAgentBridge.request({ action: 'health', requestId: 'req-page' })",
@@ -250,7 +250,7 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
 
   vm.runInContext(fs.readFileSync(bridgeBackgroundPath, "utf8"), context, { filename: bridgeBackgroundPath });
   const bridge = context.AskAiTogetherAgentBridgeBackground;
-  assert.equal(bridge.version, "agent-bridge-mvp-v1");
+  assert.equal(bridge.version, "agent-bridge-mvp-v2");
 
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "unknown" })).ok, false);
   assert.equal((await bridge.handleAgentBridgeRequest({ action: "health", unexpected: true })).reason, "unknown-field");
@@ -290,6 +290,9 @@ const manifestPath = path.join(extensionRoot, "manifest.json");
   assert.equal(health.connectionLayer, true);
   assert.ok(health.primitiveActions.includes("sendPrompt"));
   assert.ok(health.primitiveActions.includes("collectResponse"));
+  assert.ok(health.exchangeActions.includes("startExchange"));
+  assert.ok(health.exchangeActions.includes("getExchangeStatus"));
+  assert.ok(health.exchangeActions.includes("cancelExchange"));
   assert.ok(health.compatibilityActions.includes("sendAll"));
   assert.ok(health.deprecatedPipelineActions.includes("collectAll"));
   assert.deepEqual(Array.from(health.providerAllowlist), ["chatgpt", "grok", "gemini", "claude"]);

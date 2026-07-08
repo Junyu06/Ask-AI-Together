@@ -1,7 +1,7 @@
 (function initAskAiTogetherAgentBridge(global) {
   "use strict";
 
-  const BRIDGE_VERSION = "agent-bridge-mvp-v1";
+  const BRIDGE_VERSION = "agent-bridge-mvp-v2";
 
   async function request(payload) {
     if (!global.chrome?.runtime?.sendMessage) {

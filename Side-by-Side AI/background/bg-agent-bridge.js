@@ -1,6 +1,6 @@
 "use strict";
 
-const AGENT_BRIDGE_VERSION = "agent-bridge-mvp-v1";
+const AGENT_BRIDGE_VERSION = "agent-bridge-mvp-v2";
 const AGENT_BRIDGE_PROVIDER_ALLOWLIST = Object.freeze(["chatgpt", "grok", "gemini", "claude"]);
 const AGENT_BRIDGE_ACTIONS = new Set([
   "health",
@@ -11,6 +11,9 @@ const AGENT_BRIDGE_ACTIONS = new Set([
   "sendPrompt",
   "collectResponse",
   "getProviderStatus",
+  "startExchange",
+  "getExchangeStatus",
+  "cancelExchange",
   "openOrBindTargets",
   "sendAll",
   "collectAll",
@@ -24,6 +27,11 @@ const AGENT_BRIDGE_PRIMITIVE_ACTIONS = Object.freeze([
   "sendPrompt",
   "collectResponse",
   "getProviderStatus"
+]);
+const AGENT_BRIDGE_EXCHANGE_ACTIONS = Object.freeze([
+  "startExchange",
+  "getExchangeStatus",
+  "cancelExchange"
 ]);
 const AGENT_BRIDGE_COMPATIBILITY_ACTIONS = Object.freeze([
   "openOrBindTargets",
@@ -40,9 +48,19 @@ const AGENT_BRIDGE_PAYLOAD_FIELDS = new Set([
   "providerId",
   "providerIds",
   "prompt",
-  "options"
+  "options",
+  "exchangeId",
+  "providerOptions"
 ]);
-const AGENT_BRIDGE_OPTION_FIELDS = new Set(["timeoutMs", "deadlineMs", "poll", "newChatBeforeSend", "newChatSettleMs"]);
+const AGENT_BRIDGE_OPTION_FIELDS = new Set([
+  "timeoutMs",
+  "deadlineMs",
+  "poll",
+  "newChatBeforeSend",
+  "newChatSettleMs",
+  "collectTimeoutMs"
+]);
+const AGENT_BRIDGE_PROVIDER_OPTION_FIELDS = new Set(["newChatBeforeSend"]);
 const AGENT_BRIDGE_NEW_CHAT_TIMEOUT_MS = 5000;
 const AGENT_BRIDGE_NEW_CHAT_DEFAULT_SETTLE_MS = 2000;
 const AGENT_BRIDGE_NEW_CHAT_MAX_SETTLE_MS = 5000;
@@ -211,6 +229,33 @@ function validateAgentBridgePayload(rawPayload) {
         return failClosed("invalid-option-field", { field: "options.newChatSettleMs" });
       }
     }
+    if (options.collectTimeoutMs != null) {
+      const collectTimeoutMs = Number(options.collectTimeoutMs);
+      if (!Number.isFinite(collectTimeoutMs) || collectTimeoutMs < 0) {
+        return failClosed("invalid-option-field", { field: "options.collectTimeoutMs" });
+      }
+    }
+  }
+
+  const providerOptions = rawPayload.providerOptions;
+  if (providerOptions != null) {
+    if (!isPlainObject(providerOptions)) return failClosed("provider-options-must-be-object");
+    for (const [optionProviderId, providerOption] of Object.entries(providerOptions)) {
+      if (!AGENT_BRIDGE_PROVIDER_ALLOWLIST.includes(optionProviderId)) {
+        return failClosed("unknown-provider", { providerId: optionProviderId, field: "providerOptions" });
+      }
+      if (!isPlainObject(providerOption)) {
+        return failClosed("invalid-provider-option", { field: `providerOptions.${optionProviderId}` });
+      }
+      for (const key of Object.keys(providerOption)) {
+        if (!AGENT_BRIDGE_PROVIDER_OPTION_FIELDS.has(key)) {
+          return failClosed("unknown-option-field", { field: `providerOptions.${optionProviderId}.${key}` });
+        }
+      }
+      if (providerOption.newChatBeforeSend != null && typeof providerOption.newChatBeforeSend !== "boolean") {
+        return failClosed("invalid-provider-option", { field: `providerOptions.${optionProviderId}.newChatBeforeSend` });
+      }
+    }
   }
 
   const providerId = normalizeProviderId(rawPayload.providerId);
@@ -226,14 +271,14 @@ function validateAgentBridgePayload(rawPayload) {
     if (!providerId) return failClosed("providerId-required", { action });
   }
 
-  if (action === "sendPrompt") {
+  if (action === "sendPrompt" || action === "sendAll" || action === "startExchange") {
     const prompt = String(rawPayload.prompt || "");
     if (!prompt.trim()) return failClosed("prompt-required");
   }
 
-  if (action === "sendAll") {
-    const prompt = String(rawPayload.prompt || "");
-    if (!prompt.trim()) return failClosed("prompt-required");
+  const exchangeId = String(rawPayload.exchangeId || "").trim();
+  if ((action === "getExchangeStatus" || action === "cancelExchange") && !exchangeId) {
+    return failClosed("exchangeId-required", { action });
   }
 
   return {
@@ -245,7 +290,9 @@ function validateAgentBridgePayload(rawPayload) {
     providerId,
     providerIds,
     prompt: String(rawPayload.prompt || ""),
-    options: options || {}
+    options: options || {},
+    exchangeId,
+    providerOptions: providerOptions || {}
   };
 }
 
@@ -637,6 +684,7 @@ function bridgeActionMetadata() {
   return {
     connectionLayer: true,
     primitiveActions: AGENT_BRIDGE_PRIMITIVE_ACTIONS.slice(),
+    exchangeActions: AGENT_BRIDGE_EXCHANGE_ACTIONS.slice(),
     compatibilityActions: AGENT_BRIDGE_COMPATIBILITY_ACTIONS.slice(),
     deprecatedPipelineActions: AGENT_BRIDGE_COMPATIBILITY_ACTIONS.filter((action) => action !== "openOrBindTargets"),
     deprecatedActions: AGENT_BRIDGE_COMPATIBILITY_ACTIONS.filter((action) => action !== "openOrBindTargets"),
@@ -902,7 +950,8 @@ async function bridgeHealth(normalized) {
       tabId: targets[providerId]?.tabId ?? null
     })),
     backgroundRoundtrip: true,
-    lastRun: summarizeRun(lastRun)
+    lastRun: summarizeRun(lastRun),
+    lastExchange: globalThis.AskAiTogetherAgentExchange?.lastAgentExchangeSummary?.() || null
   };
 }
 
@@ -1168,6 +1217,26 @@ async function bridgeGetProviderStatus(normalized) {
     };
   }
   const capability = normalizeCapabilitiesResult(providerIds, capabilitiesResult)[0];
+
+  let generation = {
+    status: "unknown",
+    reason: current.target.bound ? "generation-probe-unavailable" : "provider-unbound"
+  };
+  if (current.target.bound && globalThis.AskAiTogetherAgentExchange?.probeProviderGenerationState) {
+    const probe = await globalThis.AskAiTogetherAgentExchange.probeProviderGenerationState(
+      current.target.tabId,
+      normalized.providerId
+    );
+    generation = probe?.ok
+      ? {
+          status: probe.busy ? "generating" : "idle",
+          signal: probe.signal || "",
+          latestTextLength: probe.textLength || 0,
+          reason: ""
+        }
+      : { status: "unknown", reason: probe?.reason || "probe-failed" };
+  }
+
   return {
     ok: capabilitiesResult?.ok !== false,
     bridgeVersion: AGENT_BRIDGE_VERSION,
@@ -1178,10 +1247,7 @@ async function bridgeGetProviderStatus(normalized) {
     target: current.target,
     capability,
     conversation: current.conversation,
-    generation: {
-      status: "unknown",
-      reason: "generation-state-not-exposed"
-    },
+    generation,
     reason: capabilitiesResult?.reason || ""
   };
 }
@@ -1426,6 +1492,15 @@ async function handleAgentBridgeRequest(rawPayload, context = {}) {
   if (normalized.action === "sendPrompt") return bridgeSendPrompt(normalized, context);
   if (normalized.action === "collectResponse") return bridgeCollectResponse(normalized, context);
   if (normalized.action === "getProviderStatus") return bridgeGetProviderStatus(normalized);
+  if (normalized.action === "startExchange") {
+    return globalThis.AskAiTogetherAgentExchange.bridgeStartExchange(normalized, context);
+  }
+  if (normalized.action === "getExchangeStatus") {
+    return globalThis.AskAiTogetherAgentExchange.bridgeGetExchangeStatus(normalized, context);
+  }
+  if (normalized.action === "cancelExchange") {
+    return globalThis.AskAiTogetherAgentExchange.bridgeCancelExchange(normalized);
+  }
   if (normalized.action === "openOrBindTargets") return bridgeOpenOrBindTargets(normalized, context);
   if (normalized.action === "sendAll") return bridgeSendAll(normalized, context);
   if (normalized.action === "collectAll") return bridgeCollectAll(normalized, context);

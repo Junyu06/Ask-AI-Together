@@ -621,9 +621,18 @@ async function collectLastFromTargets(siteIds, siteEntries, origin, targetHints)
   return { ok: true, sections };
 }
 
-/** 串行执行，避免多路并发时各窗口 chrome.windows.update 抢焦点导致死循环/卡死 */
-let __oaNewChatChain = Promise.resolve();
+/** per-provider 串行链：同一站点的 new-chat 导航互斥（防同 tab 竞争导航），
+ *  不同站点可并发——navigateTargetToNewChat 是纯 URL 导航，无窗口焦点操作。 */
+const __oaNewChatChains = new Map();
 const NEW_CHAT_NAVIGATION_TIMEOUT_MS = 12000;
+
+function enqueueNewChatForSite(siteId, job) {
+  const key = String(siteId || "");
+  const prev = __oaNewChatChains.get(key) || Promise.resolve();
+  const next = prev.then(job, job);
+  __oaNewChatChains.set(key, next.then(() => {}, () => {}));
+  return next;
+}
 
 function normalizeNavigationUrl(value) {
   try {
@@ -773,61 +782,56 @@ async function navigateTargetToNewChat(siteId, rec, siteEntries) {
 }
 
 async function newChatOnTargets(siteIds, siteEntries, origin, targetHints) {
-  const job = async () => {
-    return withInitiatorFocusRestored(origin, async () => {
-      if (Array.isArray(siteEntries) && siteEntries.length) {
-        await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
+  return withInitiatorFocusRestored(origin, async () => {
+    if (Array.isArray(siteEntries) && siteEntries.length) {
+      await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
+    }
+    const targets = await loadTargets();
+    const ids = Array.isArray(siteIds) ? siteIds : [];
+    await ensureTargetsForAction(ids, siteEntries, targets, origin, targetHints);
+    const outcomes = [];
+    for (const siteId of ids) {
+      const rec = targets[siteId];
+      if (!rec?.tabId) {
+        outcomes.push(makeBackgroundRuntimeOutcome("transport-failed", {
+          action: "newChat",
+          providerId: siteId,
+          siteId,
+          reason: "missing-tab"
+        }));
+        continue;
       }
-      const targets = await loadTargets();
-      const ids = Array.isArray(siteIds) ? siteIds : [];
-      await ensureTargetsForAction(ids, siteEntries, targets, origin, targetHints);
-      const outcomes = [];
-      for (const siteId of ids) {
-        const rec = targets[siteId];
-        if (!rec?.tabId) {
-          outcomes.push(makeBackgroundRuntimeOutcome("transport-failed", {
-            action: "newChat",
-            providerId: siteId,
-            siteId,
-            reason: "missing-tab"
-          }));
-          continue;
-        }
-        try {
-          outcomes.push(await navigateTargetToNewChat(siteId, rec, siteEntries));
-        } catch (error) {
-          outcomes.push(makeBackgroundRuntimeOutcome("transport-failed", {
-            action: "newChat",
-            providerId: siteId,
-            siteId,
-            reason: "tab-unreachable",
-            error: String(error?.message || error || "")
-          }));
-        }
-        if (typeof delay === "function") await delay(40);
+      try {
+        outcomes.push(await enqueueNewChatForSite(siteId, () => navigateTargetToNewChat(siteId, rec, siteEntries)));
+      } catch (error) {
+        outcomes.push(makeBackgroundRuntimeOutcome("transport-failed", {
+          action: "newChat",
+          providerId: siteId,
+          siteId,
+          reason: "tab-unreachable",
+          error: String(error?.message || error || "")
+        }));
       }
-      const failed = outcomes.filter((outcome) => outcome?.ok === false);
-      if (failed.length) {
-        return {
-          ok: false,
-          status: failed.length === outcomes.length ? "transport-failed" : "partial-failed",
-          failedCount: failed.length,
-          succeededCount: outcomes.length - failed.length,
-          outcomes
-        };
-      }
+      if (typeof delay === "function") await delay(40);
+    }
+    const failed = outcomes.filter((outcome) => outcome?.ok === false);
+    if (failed.length) {
       return {
-        ok: true,
-        status: "response-found",
-        succeededCount: outcomes.length,
-        failedCount: 0,
+        ok: false,
+        status: failed.length === outcomes.length ? "transport-failed" : "partial-failed",
+        failedCount: failed.length,
+        succeededCount: outcomes.length - failed.length,
         outcomes
       };
-    });
-  };
-  const p = __oaNewChatChain.then(job);
-  __oaNewChatChain = p.catch(() => {});
-  return p;
+    }
+    return {
+      ok: true,
+      status: "response-found",
+      succeededCount: outcomes.length,
+      failedCount: 0,
+      outcomes
+    };
+  });
 }
 
 /**
@@ -881,24 +885,27 @@ async function getState(siteEntries, origin, targetHints) {
   if (Array.isArray(siteEntries) && siteEntries.length) {
     await syncTargetsFromTabsForSites(siteEntries, origin, targetHints);
   }
+  /* 原地清理共享 cache 对象，不做对象替换——并发调用方持有同一引用，替换会丢别人的更新 */
   const targets = await loadTargets();
-  const copy = { ...targets };
-  for (const siteId of Object.keys(copy)) {
-    const rec = copy[siteId];
+  let changed = false;
+  for (const siteId of Object.keys(targets)) {
+    const rec = targets[siteId];
     if (!rec?.windowId) {
-      delete copy[siteId];
+      delete targets[siteId];
+      changed = true;
       continue;
     }
     try {
       await chrome.windows.get(rec.windowId);
     } catch (_e) {
-      delete copy[siteId];
+      delete targets[siteId];
+      changed = true;
     }
   }
-  if (Object.keys(copy).length !== Object.keys(targets).length) {
-    await saveTargets(copy);
+  if (changed) {
+    await saveTargets(targets);
   }
-  return { ok: true, targets: copy };
+  return { ok: true, targets: { ...targets } };
 }
 
 runtimeApi()?.registerTransport?.("compatibility", {

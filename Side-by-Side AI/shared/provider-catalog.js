@@ -19,6 +19,11 @@
       inputSelectors: ["#prompt-textarea", "textarea"],
       sendSelectors: ['button[data-testid="send-button"]', 'button[type="submit"]'],
       newChatSelectors: ['[data-testid="create-new-chat-button"]', "a.no-draggable", 'a[href="/"]'],
+      busySelectors: [
+        'button[data-testid="stop-button"]',
+        '#composer-submit-button[aria-label*="Stop" i]',
+        'button[aria-label*="Stop streaming" i]'
+      ],
       responseSelectors: [
         '[data-message-author-role="assistant"]',
         'article [data-message-author-role="assistant"]',
@@ -89,6 +94,10 @@
       inputSelectors: ["textarea[aria-label]", 'div[contenteditable="true"]', "textarea"],
       sendSelectors: ['button[type="submit"]'],
       newChatSelectors: ['a[data-sidebar="menu-button"]', 'a[href="/"]'],
+      busySelectors: [
+        'button[aria-label="Stop model response"]',
+        'button[aria-label*="Stop" i]'
+      ],
       responseSelectors: ['[data-testid*="assistant"]', '[data-message-author-role="assistant"]', ".prose"]
     },
     {
@@ -100,6 +109,10 @@
       inputSelectors: ['div[contenteditable="true"]', "textarea"],
       sendSelectors: ['button[aria-label*="Send" i]', 'button[type="submit"]'],
       newChatSelectors: ['a[href="/new"]', 'button[aria-label*="New chat" i]', 'a[href="/"]'],
+      busySelectors: [
+        '[data-is-streaming="true"]',
+        'button[aria-label*="Stop response" i]'
+      ],
       responseSelectors: [
         '.font-claude-message[data-is-streaming="false"]',
         '[data-is-streaming="false"] .font-claude-message',
@@ -140,6 +153,11 @@
         '[role="button"][aria-label*="New chat" i]',
         'a[href="/"]'
       ],
+      busySelectors: [
+        'button[aria-label*="Stop" i]',
+        'button[aria-label*="停止" i]',
+        '.stop-icon'
+      ],
       responseSelectors: ["message-content", "[data-response-id]", ".model-response-text", ".response-content"]
     },
     {
@@ -173,6 +191,7 @@
       sendSelectors: cloneArray(provider.sendSelectors),
       newChatSelectors: cloneArray(provider.newChatSelectors),
       responseSelectors: cloneArray(provider.responseSelectors),
+      busySelectors: cloneArray(provider.busySelectors),
       capabilities: {
         supportsAttachments: attachmentMode === "legacy-only",
         attachmentMode: attachmentMode
@@ -242,6 +261,12 @@
     });
   }
 
+  function getBusySelectorsMap() {
+    return mapByProvider(function (provider) {
+      return cloneArray(provider.busySelectors);
+    });
+  }
+
   function getManifestHostPatterns() {
     var seen = {};
     var patterns = [];
@@ -293,6 +318,7 @@
     getNewChatUrlMap: getNewChatUrlMap,
     getHostMap: getHostMap,
     getResponseSelectorsMap: getResponseSelectorsMap,
+    getBusySelectorsMap: getBusySelectorsMap,
     getManifestHostPatterns: getManifestHostPatterns,
     providerMatchesHost: providerMatchesHost,
     matchProviderForLocation: matchProviderForLocation

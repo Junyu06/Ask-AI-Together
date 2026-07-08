@@ -22,3 +22,4 @@ const BUILTIN_SITE_URLS = providerCatalog?.getHomeUrlMap?.() || {};
 const BUILTIN_SITE_NEW_CHAT_URLS = providerCatalog?.getNewChatUrlMap?.() || BUILTIN_SITE_URLS;
 const SITE_DISPLAY_NAMES = providerCatalog?.getDisplayNameMap?.() || {};
 const SITE_HOSTS = providerCatalog?.getHostMap?.() || {};
+const SITE_BUSY_SELECTORS = providerCatalog?.getBusySelectorsMap?.() || {};
