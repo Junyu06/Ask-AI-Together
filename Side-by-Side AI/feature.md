@@ -75,6 +75,7 @@ Default selected providers are ChatGPT, Claude, and Gemini.
 - `shared/agent-bridge.js` is loaded only by trusted extension pages (`legacy/index.html` and `ui/options/options.html`), not by third-party AI pages.
 - `background/bg-agent-bridge.js` exposes a bounded bridge for external agent helpers that can already reach the extension page.
 - Primitive actions are the supported agent-facing path: `health`, `listProviders`, `openProvider`, `ensureFreshConversation`, `sendPrompt`, `collectResponse`, and `getProviderStatus`.
+- Exchange actions (`startExchange`, `getExchangeStatus`, `cancelExchange`, bridge v2, 2026-07-08) are the preferred orchestration path for trusted agents: one `startExchange` runs fresh→send→generation-monitoring→collect for all requested providers in parallel inside the extension, with a per-provider phase machine (pending→opening→fresh-conversation→sending→sent→generating→stabilizing→completed/failed/cancelled) persisted in `chrome.storage.session`. `getExchangeStatus` both reports and pumps the machine, so MV3 service-worker restarts never lose correctness and pre-send stalls fail closed instead of double-sending. Generation state is probed from provider DOM busy signals (`busySelectors` in the provider catalog) with baseline/placeholder/text-stability fallbacks; a provider stuck with no candidate text gets one visibility nudge (tab activate + window focus) because macOS pauses rendering of fully occluded windows. `getProviderStatus` reports live generation state through the same probe. Primitives stay available for debugging and older callers.
 - Compatibility actions such as `sendAll`, `collectAll`, `getRunState`, and `cancelRun` remain for old compatibility/debug flows, but should not be used as the normal Hermes `external-ai-research` path.
 - Primitive actions are intentionally not an end-to-end product brain: the external agent owns privacy filtering, sequencing, stopping, and final answer synthesis.
 - Primitive sends use `source: "agent-bridge-primitive"` and must not create legacy `oa_agent_bridge_runs_v1` run storage.
@@ -118,6 +119,7 @@ Use targeted validators under `scripts/validate-*.js`. Important regression chec
 - `validate-slice5-quote-cleanup.js`
 - `validate-gemini-attachment-main-world.js`
 - `validate-agent-bridge.js`
+- `validate-agent-exchange.js`
 
 For user-visible Chrome extension bugs, local validators are not enough. Reload the unpacked extension in Chrome, reopen the relevant extension/provider pages, then run the same user-path live smoke.
 
